@@ -7,6 +7,8 @@
 #include "storage/blocksstable/ob_index_block_builder.h"
 #include "storage/ob_parallel_external_sort.h"
 #include "storage/tx_storage/ob_ls_handle.h"
+#include "share/ob_thread_pool.h"
+#include <vector>
 
 namespace oceanbase
 {
@@ -63,7 +65,7 @@ public:
 private:
   struct UnusedRowHandler
   {
-    int operator()(common::ObIArray<ObCSVGeneralParser::FieldValue> &fields_per_line)
+    int operator()(common::ObArray<ObCSVGeneralParser::FieldValue> &fields_per_line)
     {
       UNUSED(fields_per_line);
       return OB_SUCCESS;
@@ -162,6 +164,23 @@ private:
 
 class ObLoadSSTableWriter
 {
+  class MyThreadPool: public ObThreadPool
+  {
+    public:
+    void run1() override
+    {
+      ObTenantStatEstGuard stat_est_guard(MTL_ID());
+      ObTenantBase *tenant_base = MTL_CTX();
+      Worker::CompatMode mode = ((ObTenant *)tenant_base)->get_compat_mode();
+      Worker::set_compatibility_mode(mode);
+      // do work
+      int64_t thread_id = MTL_ID();
+      
+      ob_load_sstable_writer->close();
+    }
+    public:
+    ObLoadSSTableWriter * ob_load_sstable_writer;
+  };
 public:
   ObLoadSSTableWriter();
   ~ObLoadSSTableWriter();
@@ -170,9 +189,13 @@ public:
   int close();
 private:
   int init_sstable_index_builder(const share::schema::ObTableSchema *table_schema);
-  int init_macro_block_writer(const share::schema::ObTableSchema *table_schema);
+  int init_data_store_desc(const share::schema::ObTableSchema *table_schema);
+  // int init_macro_block_writer(const share::schema::ObTableSchema *table_schema);
   int create_sstable();
 private:
+  static const int64_t THREAD_POOL_SIZE = 8;
+  MyThreadPool thread_pool;
+  common::ObArray<blocksstable::ObDatumRow> datum_rows_;
   common::ObTabletID tablet_id_;
   storage::ObTabletHandle tablet_handle_;
   share::ObLSID ls_id_;
@@ -183,7 +206,7 @@ private:
   storage::ObITable::TableKey table_key_;
   blocksstable::ObSSTableIndexBuilder sstable_index_builder_;
   blocksstable::ObDataStoreDesc data_store_desc_;
-  blocksstable::ObMacroBlockWriter macro_block_writer_;
+  blocksstable::ObMacroBlockWriter macro_block_writer_[THREAD_POOL_SIZE];
   blocksstable::ObDatumRow datum_row_;
   bool is_closed_;
   bool is_inited_;
@@ -208,6 +231,7 @@ private:
   ObLoadExternalSort external_sort_;
   ObLoadSSTableWriter sstable_writer_;
 };
+
 
 } // namespace sql
 } // namespace oceanbase
