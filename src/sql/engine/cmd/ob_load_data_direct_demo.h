@@ -163,7 +163,7 @@ private:
 
 class ObLoadSSTableWriter
 {
-  static const int64_t THREAD_POOL_SIZE = 1;
+  static const int64_t THREAD_POOL_SIZE = 2;
 public:
   ObLoadSSTableWriter();
   ~ObLoadSSTableWriter();
@@ -204,7 +204,7 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
   };
   static const int64_t MEM_BUFFER_SIZE = (4LL << 30);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
-  static const int64_t THREAD_POOL_SIZE = 1;
+  static const int64_t THREAD_POOL_SIZE = 2;
 public:
   ObLoadDataDirectDemo();
   virtual ~ObLoadDataDirectDemo();
