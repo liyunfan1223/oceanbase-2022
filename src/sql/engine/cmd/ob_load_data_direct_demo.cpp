@@ -954,14 +954,51 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
     LOG_WARN("fail to init row caster", KR(ret));
   }
   // init external_sort_
-  else if (OB_FAIL(external_sort_.init(table_schema, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
+  else if (OB_FAIL(external_sort_[0].init(table_schema, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
     LOG_WARN("fail to init row caster", KR(ret));
   }
   // init sstable_writer_
-  else if (OB_FAIL(sstable_writer_.init(table_schema))) {
+  else if (OB_FAIL(sstable_writer_[0].init(table_schema))) {
     LOG_WARN("fail to init sstable writer", KR(ret));
   }
+  thread_pool.ob_load_data_direct_demo = this;
   return ret;
+}
+
+void ObLoadDataDirectDemo::MyThreadPool::run1()
+{
+  ObTenantStatEstGuard stat_est_guard(MTL_ID());
+  ObTenantBase *tenant_base = MTL_CTX();
+  Worker::CompatMode mode = ((ObTenant *)tenant_base)->get_compat_mode();
+  Worker::set_compatibility_mode(mode);
+  uint64_t thread_id = get_thread_idx();
+  // do work
+
+  int ret = OB_SUCCESS;
+  const ObLoadDatumRow *datum_row = nullptr;
+
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(ob_load_data_direct_demo->external_sort_[thread_id].close())) {
+      LOG_WARN("fail to close external sort", KR(ret));
+    }
+  }
+  while (OB_SUCC(ret)) {
+    if (OB_FAIL(ob_load_data_direct_demo->external_sort_[thread_id].get_next_row(datum_row))) {
+      if (OB_UNLIKELY(OB_ITER_END != ret)) {
+        LOG_WARN("fail to get next row", KR(ret));
+      } else {
+        ret = OB_SUCCESS;
+        break;
+      }
+    } else if (OB_FAIL(ob_load_data_direct_demo->sstable_writer_[thread_id].append_row(*datum_row))) {
+      LOG_WARN("fail to append row", KR(ret));
+    }
+  }
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(ob_load_data_direct_demo->sstable_writer_[thread_id].close())) {
+      LOG_WARN("fail to close sstable writer", KR(ret));
+    }
+  }
 }
 
 int ObLoadDataDirectDemo::do_load()
@@ -997,34 +1034,16 @@ int ObLoadDataDirectDemo::do_load()
           }
         } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
           LOG_WARN("fail to cast row", KR(ret));
-        } else if (OB_FAIL(external_sort_.append_row(*datum_row))) {
+        } else if (OB_FAIL(external_sort_[0].append_row(*datum_row))) {
           LOG_WARN("fail to append row", KR(ret));
         }
       }
     }
   }
-  if (OB_SUCC(ret)) {
-    if (OB_FAIL(external_sort_.close())) {
-      LOG_WARN("fail to close external sort", KR(ret));
-    }
-  }
-  while (OB_SUCC(ret)) {
-    if (OB_FAIL(external_sort_.get_next_row(datum_row))) {
-      if (OB_UNLIKELY(OB_ITER_END != ret)) {
-        LOG_WARN("fail to get next row", KR(ret));
-      } else {
-        ret = OB_SUCCESS;
-        break;
-      }
-    } else if (OB_FAIL(sstable_writer_.append_row(*datum_row))) {
-      LOG_WARN("fail to append row", KR(ret));
-    }
-  }
-  if (OB_SUCC(ret)) {
-    if (OB_FAIL(sstable_writer_.close())) {
-      LOG_WARN("fail to close sstable writer", KR(ret));
-    }
-  }
+  thread_pool.set_thread_count(THREAD_POOL_SIZE);
+  thread_pool.set_run_wrapper(MTL_CTX());
+  thread_pool.start();
+  thread_pool.wait();
   return ret;
 }
 

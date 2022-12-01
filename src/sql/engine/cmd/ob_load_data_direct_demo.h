@@ -7,6 +7,7 @@
 #include "storage/blocksstable/ob_index_block_builder.h"
 #include "storage/ob_parallel_external_sort.h"
 #include "storage/tx_storage/ob_ls_handle.h"
+#include "share/ob_thread_pool.h"
 
 namespace oceanbase
 {
@@ -191,8 +192,16 @@ private:
 
 class ObLoadDataDirectDemo : public ObLoadDataBase
 {
-  static const int64_t MEM_BUFFER_SIZE = (6LL << 30);
+  class MyThreadPool: public ObThreadPool
+  {
+    public:
+    void run1() override;
+    public:
+    ObLoadDataDirectDemo * ob_load_data_direct_demo;
+  };
+  static const int64_t MEM_BUFFER_SIZE = (4LL << 30);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
+  static const int64_t THREAD_POOL_SIZE = 1;
 public:
   ObLoadDataDirectDemo();
   virtual ~ObLoadDataDirectDemo();
@@ -200,13 +209,16 @@ public:
 private:
   int inner_init(ObLoadDataStmt &load_stmt);
   int do_load();
+  int init_external_sorts_();
+  int init_sstable_writers_();
 private:
+  MyThreadPool thread_pool;
   ObLoadCSVPaser csv_parser_;
   ObLoadSequentialFileReader file_reader_;
   ObLoadDataBuffer buffer_;
   ObLoadRowCaster row_caster_;
-  ObLoadExternalSort external_sort_;
-  ObLoadSSTableWriter sstable_writer_;
+  ObLoadExternalSort external_sort_[THREAD_POOL_SIZE];
+  ObLoadSSTableWriter sstable_writer_[THREAD_POOL_SIZE];
 };
 
 } // namespace sql
