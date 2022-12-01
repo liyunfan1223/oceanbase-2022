@@ -964,12 +964,16 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   else if (OB_FAIL(row_caster_.init(table_schema_, field_or_var_list))) {
     LOG_WARN("fail to init row caster", KR(ret));
   }
-  // // init external_sort_
-  // else if (OB_FAIL(external_sort_[0].init(table_schema, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
-  //   LOG_WARN("fail to init row caster", KR(ret));
-  // }
+  // init external_sort_
+  else {
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+      if (OB_FAIL(external_sort_[i].init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
+        LOG_WARN("fail to init row caster", KR(ret));
+      }
+    }
+  }
   // init sstable_writer_
-  else if (OB_FAIL(sstable_writer_.init(table_schema_))) {
+  if (OB_FAIL(sstable_writer_.init(table_schema_))) {
     LOG_WARN("fail to init sstable writer", KR(ret));
   }
   thread_pool.ob_load_data_direct_demo = this;
@@ -991,7 +995,6 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
   ObLoadExternalSort & external_sort = ob_load_data_direct_demo->external_sort_[thread_id];
   ObLoadSSTableWriter & sstable_writer = ob_load_data_direct_demo->sstable_writer_;
   const ObTableSchema *table_schema = ob_load_data_direct_demo->table_schema_;
-  external_sort.init(table_schema, ob_load_data_direct_demo->MEM_BUFFER_SIZE, ob_load_data_direct_demo->FILE_BUFFER_SIZE);
   sstable_writer.init_macro_block_writer(thread_id);
   if (OB_SUCC(ret)) {
     if (OB_FAIL(external_sort.close())) {
