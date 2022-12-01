@@ -163,15 +163,17 @@ private:
 
 class ObLoadSSTableWriter
 {
+  static const int64_t THREAD_POOL_SIZE = 1;
 public:
   ObLoadSSTableWriter();
   ~ObLoadSSTableWriter();
   int init(const share::schema::ObTableSchema *table_schema);
-  int append_row(const ObLoadDatumRow &datum_row);
-  int close();
+  int append_row(const ObLoadDatumRow &datum_row, uint64_t thread_id);
+  int close(uint64_t thread_id);
+  int init_macro_block_writer(uint64_t thread_id);
 private:
   int init_sstable_index_builder(const share::schema::ObTableSchema *table_schema);
-  int init_macro_block_writer(const share::schema::ObTableSchema *table_schema);
+  int init_data_store_desc(const share::schema::ObTableSchema *table_schema);
   int create_sstable();
 private:
   common::ObTabletID tablet_id_;
@@ -184,10 +186,11 @@ private:
   storage::ObITable::TableKey table_key_;
   blocksstable::ObSSTableIndexBuilder sstable_index_builder_;
   blocksstable::ObDataStoreDesc data_store_desc_;
-  blocksstable::ObMacroBlockWriter macro_block_writer_;
+  blocksstable::ObMacroBlockWriter macro_block_writer_[THREAD_POOL_SIZE];
   blocksstable::ObDatumRow datum_row_;
   bool is_closed_;
   bool is_inited_;
+  int64_t closed_thread_;
 };
 
 class ObLoadDataDirectDemo : public ObLoadDataBase
@@ -213,12 +216,13 @@ private:
   int init_sstable_writers_();
 private:
   MyThreadPool thread_pool;
+  const share::schema::ObTableSchema *table_schema_ = nullptr;
   ObLoadCSVPaser csv_parser_;
   ObLoadSequentialFileReader file_reader_;
   ObLoadDataBuffer buffer_;
   ObLoadRowCaster row_caster_;
   ObLoadExternalSort external_sort_[THREAD_POOL_SIZE];
-  ObLoadSSTableWriter sstable_writer_[THREAD_POOL_SIZE];
+  ObLoadSSTableWriter sstable_writer_;
 };
 
 } // namespace sql
