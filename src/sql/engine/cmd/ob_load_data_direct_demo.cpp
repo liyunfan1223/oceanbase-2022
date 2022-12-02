@@ -934,6 +934,7 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   const uint64_t tenant_id = load_args.tenant_id_;
   const uint64_t table_id = load_args.table_id_;
   ObSchemaGetterGuard schema_guard;
+  allocator_.set_tenant_id(MTL_ID());
   // const ObTableSchema *table_schema = nullptr;
   if (OB_FAIL(ObMultiVersionSchemaService::get_instance().get_tenant_schema_guard(tenant_id,
                                                                                   schema_guard))) {
@@ -976,7 +977,18 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   if (OB_FAIL(sstable_writer_.init(table_schema_))) {
     LOG_WARN("fail to init sstable writer", KR(ret));
   }
-  thread_pool.ob_load_data_direct_demo = this;
+  const int64_t rowkey_column_num = table_schema_->get_rowkey_column_num();
+  ObArray<ObColDesc> multi_version_column_descs;
+  if (OB_FAIL(table_schema_->get_multi_version_column_descs(multi_version_column_descs))) {
+    LOG_WARN("fail to get multi version column descs", KR(ret));
+  } else if (OB_FAIL(datum_utils_.init(multi_version_column_descs, rowkey_column_num,
+                                        is_oracle_mode(), allocator_))) {
+    LOG_WARN("fail to init datum utils", KR(ret));
+  } else if (OB_FAIL(compare_.init(rowkey_column_num, &datum_utils_))) {
+    LOG_WARN("fail to init compare", KR(ret));
+  }
+  sample_inited_ = false;
+  thread_pool_.ob_load_data_direct_demo = this;
   return ret;
 }
 
@@ -1025,6 +1037,10 @@ int ObLoadDataDirectDemo::do_load()
   int ret = OB_SUCCESS;
   const ObNewRow *new_row = nullptr;
   const ObLoadDatumRow *datum_row = nullptr;
+
+  char *buf = NULL;
+  ObLoadDatumRow *new_item = NULL;
+  int sample_count = 0;
   while (OB_SUCC(ret)) {
     if (OB_FAIL(buffer_.squash())) {
       LOG_WARN("fail to squash buffer", KR(ret));
@@ -1053,16 +1069,62 @@ int ObLoadDataDirectDemo::do_load()
           }
         } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
           LOG_WARN("fail to cast row", KR(ret));
-        } else if (OB_FAIL(external_sort_[0].append_row(*datum_row))) {
-          LOG_WARN("fail to append row", KR(ret));
+        } else {
+          if (!sample_inited_) {
+            const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
+            int64_t buf_pos = sizeof(ObLoadDatumRow);
+            buf = static_cast<char *>(allocator_.alloc(item_size));
+            new_item = new (buf) ObLoadDatumRow();
+            new_item->deep_copy(*datum_row, buf, item_size, buf_pos);
+            datumrow_list_.push_back(new_item);
+            sample_count++;
+            if (sample_count == SAMPLE_POOL_SIZE) {
+              generate_sample_datumrows();
+            }
+          } else {
+            int bucket_index;
+            get_bucket_index(datum_row, bucket_index);
+            external_sort_[bucket_index].append_row(*datum_row);
+          }
         }
       }
     }
   }
-  thread_pool.set_thread_count(THREAD_POOL_SIZE);
-  thread_pool.set_run_wrapper(MTL_CTX());
-  thread_pool.start();
-  thread_pool.wait();
+  if (!sample_inited_) {
+    generate_sample_datumrows();
+  }
+  thread_pool_.set_thread_count(THREAD_POOL_SIZE);
+  thread_pool_.set_run_wrapper(MTL_CTX());
+  thread_pool_.start();
+  thread_pool_.wait();
+  return ret;
+}
+
+int ObLoadDataDirectDemo::generate_sample_datumrows()
+{
+  int ret = OB_SUCCESS;
+  std::sort(datumrow_list_.begin(), datumrow_list_.end(), compare_);
+  for (int i = 1; i < THREAD_POOL_SIZE; i++) {
+    sample_datumrows_.push_back(datumrow_list_[(datumrow_list_.size() - 1) / THREAD_POOL_SIZE * i]);
+  }
+  for (int i = 0; i < datumrow_list_.size(); i++) {
+    int bucket_index;
+    get_bucket_index(datumrow_list_[i], bucket_index);
+    external_sort_[bucket_index].append_row(*datumrow_list_[i]);
+  }
+  return ret;
+}
+
+int ObLoadDataDirectDemo::get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index)
+{
+  int ret = OB_SUCCESS;
+  for (int i = 0; i < sample_datumrows_.size(); i++) {
+    if (compare_(datum_row, sample_datumrows_[i]) == false) {
+      bucket_index = i;
+      return ret;
+    }
+  }
+  bucket_index = sample_datumrows_.size();
   return ret;
 }
 

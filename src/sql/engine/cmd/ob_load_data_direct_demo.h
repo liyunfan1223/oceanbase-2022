@@ -163,7 +163,7 @@ private:
 
 class ObLoadSSTableWriter
 {
-  static const int64_t THREAD_POOL_SIZE = 2;
+  static const int64_t THREAD_POOL_SIZE = 8;
 public:
   ObLoadSSTableWriter();
   ~ObLoadSSTableWriter();
@@ -202,9 +202,10 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
     public:
     ObLoadDataDirectDemo * ob_load_data_direct_demo;
   };
-  static const int64_t MEM_BUFFER_SIZE = (4LL << 30);
+  static const int64_t MEM_BUFFER_SIZE = (6LL << 30);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
-  static const int64_t THREAD_POOL_SIZE = 2;
+  static const int64_t THREAD_POOL_SIZE = 8;
+  static const int64_t SAMPLE_POOL_SIZE = 1000;
 public:
   ObLoadDataDirectDemo();
   virtual ~ObLoadDataDirectDemo();
@@ -212,10 +213,15 @@ public:
 private:
   int inner_init(ObLoadDataStmt &load_stmt);
   int do_load();
-  int init_external_sorts_();
-  int init_sstable_writers_();
+  int generate_sample_datumrows();
+  int get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index);
 private:
-  MyThreadPool thread_pool;
+  MyThreadPool thread_pool_;
+  common::ObVector<ObLoadDatumRow *> datumrow_list_;
+  common::ObVector<ObLoadDatumRow *> sample_datumrows_;
+  ObLoadDatumRowCompare compare_;
+  common::ObArenaAllocator allocator_;
+  blocksstable::ObStorageDatumUtils datum_utils_;
   const share::schema::ObTableSchema *table_schema_ = nullptr;
   ObLoadCSVPaser csv_parser_;
   ObLoadSequentialFileReader file_reader_;
@@ -223,6 +229,7 @@ private:
   ObLoadRowCaster row_caster_;
   ObLoadExternalSort external_sort_[THREAD_POOL_SIZE];
   ObLoadSSTableWriter sstable_writer_;
+  int sample_inited_;
 };
 
 } // namespace sql
