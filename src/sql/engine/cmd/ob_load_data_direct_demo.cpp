@@ -776,7 +776,7 @@ int ObLoadSSTableWriter::init_macro_block_writer(uint64_t thread_id, blocksstabl
 {
   int ret = OB_SUCCESS;
   if (OB_SUCC(ret)) {
-    ObMacroDataSeq data_seq(thread_id * 10000);
+    ObMacroDataSeq data_seq(thread_id * 100);
     LOG_INFO("[DATA_DESC AND DATA_SEQ]", K(data_store_desc_), K(data_seq));
     if (OB_FAIL(macro_block_writer.open(data_store_desc_, data_seq))) {
       LOG_WARN("fail to init macro block writer", KR(ret), K(data_store_desc_), K(data_seq));
