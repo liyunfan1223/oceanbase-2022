@@ -163,7 +163,7 @@ private:
 
 class ObLoadSSTableWriter
 {
-  static const int64_t THREAD_POOL_SIZE = 8;
+  static const int64_t THREAD_POOL_SIZE = 10;
 public:
   ObLoadSSTableWriter();
   ~ObLoadSSTableWriter();
@@ -189,7 +189,7 @@ private:
   storage::ObITable::TableKey table_key_;
   blocksstable::ObSSTableIndexBuilder sstable_index_builder_;
   blocksstable::ObDataStoreDesc data_store_descs_[THREAD_POOL_SIZE];
-  blocksstable::ObDatumRow datum_row_;
+  // blocksstable::ObDatumRow datum_row_;
   blocksstable::ObDatumRow datum_rows_[THREAD_POOL_SIZE];
   bool is_closed_;
   bool is_inited_;
@@ -207,8 +207,8 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
   };
   static const int64_t MEM_BUFFER_SIZE = (1LL << 30);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
-  static const int64_t THREAD_POOL_SIZE = 8;
-  static const int64_t SAMPLE_POOL_SIZE = 1000;
+  static const int64_t THREAD_POOL_SIZE = 10;
+  static const int64_t SAMPLE_POOL_SIZE = 50000;
 public:
   ObLoadDataDirectDemo();
   virtual ~ObLoadDataDirectDemo();
