@@ -703,17 +703,19 @@ int ObLoadSSTableWriter::init(const ObTableSchema *table_schema)
       LOG_WARN("fail to init sstable index builder", KR(ret));
     } else if (OB_FAIL(init_data_store_desc(table_schema))) {
       LOG_WARN("fail to init macro block writer", KR(ret));
-    } else if (OB_FAIL(datum_row_.init(column_count_ + extra_rowkey_column_num_))) {
-      LOG_WARN("fail to init datum row", KR(ret));
-    } else {
+    }
+    if (OB_SUCC(ret)) {
       table_key_.table_type_ = ObITable::MAJOR_SSTABLE;
       table_key_.tablet_id_ = tablet_id_;
       table_key_.log_ts_range_.start_log_ts_ = 0;
       table_key_.log_ts_range_.end_log_ts_ = ObTimeUtil::current_time_ns();
-      datum_row_.row_flag_.set_flag(ObDmlFlag::DF_INSERT);
-      datum_row_.mvcc_row_flag_.set_last_multi_version_row(true);
-      datum_row_.storage_datums_[rowkey_column_num_].set_int(-1); // fill trans_version
-      datum_row_.storage_datums_[rowkey_column_num_ + 1].set_int(0); // fill sql_no
+      for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+        datum_rows_[i].init(column_count_ + extra_rowkey_column_num_);
+        datum_rows_[i].row_flag_.set_flag(ObDmlFlag::DF_INSERT);
+        datum_rows_[i].mvcc_row_flag_.set_last_multi_version_row(true);
+        datum_rows_[i].storage_datums_[rowkey_column_num_].set_int(-1); // fill trans_version
+        datum_rows_[i].storage_datums_[rowkey_column_num_ + 1].set_int(0); // fill sql_no
+      }
       is_inited_ = true;
       table_schema_ = table_schema;
     }
@@ -773,14 +775,8 @@ int ObLoadSSTableWriter::init_data_store_desc(const ObTableSchema *table_schema)
 int ObLoadSSTableWriter::init_macro_block_writer(uint64_t thread_id, blocksstable::ObMacroBlockWriter &macro_block_writer)
 {
   int ret = OB_SUCCESS;
-  // if (OB_FAIL(data_store_descs_[thread_id].init(*table_schema, ls_id_, tablet_id_, MAJOR_MERGE, 1))) {
-  //   LOG_WARN("fail to init data_store_desc", KR(ret), K(tablet_id_));
-  // } else {
-  //   data_store_descs_[thread_id].sstable_index_builder_ = &sstable_index_builder_;
-  // }
   if (OB_SUCC(ret)) {
     ObMacroDataSeq data_seq(thread_id * 10000);
-    // data_seq.set_parallel_degree(THREAD_POOL_SIZE);
     LOG_INFO("[DATA_DESC AND DATA_SEQ]", K(data_store_desc_), K(data_seq));
     if (OB_FAIL(macro_block_writer.open(data_store_desc_, data_seq))) {
       LOG_WARN("fail to init macro block writer", KR(ret), K(data_store_desc_), K(data_seq));
@@ -789,7 +785,7 @@ int ObLoadSSTableWriter::init_macro_block_writer(uint64_t thread_id, blocksstabl
   return ret;
 }
 
-int ObLoadSSTableWriter::append_row(const ObLoadDatumRow &datum_row, blocksstable::ObMacroBlockWriter &macro_block_writer)
+int ObLoadSSTableWriter::append_row(int thread_id, const ObLoadDatumRow &datum_row, blocksstable::ObMacroBlockWriter &macro_block_writer)
 {
   int ret = OB_SUCCESS;
   if (IS_NOT_INIT) {
@@ -804,13 +800,13 @@ int ObLoadSSTableWriter::append_row(const ObLoadDatumRow &datum_row, blocksstabl
   } else {
     for (int64_t i = 0; i < column_count_; ++i) {
       if (i < rowkey_column_num_) {
-        datum_row_.storage_datums_[i] = datum_row.datums_[i];
+        datum_rows_[thread_id].storage_datums_[i] = datum_row.datums_[i];
       } else {
-        datum_row_.storage_datums_[i + extra_rowkey_column_num_] = datum_row.datums_[i];
+        datum_rows_[thread_id].storage_datums_[i + extra_rowkey_column_num_] = datum_row.datums_[i];
       }
     }
-    LOG_INFO("try append row", K(datum_row_));
-    if (OB_FAIL(macro_block_writer.append_row(datum_row_))) {
+    LOG_INFO("try append row", K(datum_rows_[thread_id]));
+    if (OB_FAIL(macro_block_writer.append_row(datum_rows_[thread_id]))) {
       LOG_WARN("fail to append row", KR(ret));
     }
   }
@@ -1005,7 +1001,7 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
 }
 
 void ObLoadDataDirectDemo::MyThreadPool::run1()
-{
+{ 
   
   ObTenantStatEstGuard stat_est_guard(MTL_ID());
   ObTenantBase *tenant_base = MTL_CTX();
@@ -1027,7 +1023,6 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
       LOG_WARN("fail to close external sort", KR(ret));
     }
   }
-  ob_load_data_direct_demo->mutex2_.lock();
   while (OB_SUCC(ret)) {
     if (OB_FAIL(external_sort.get_next_row(datum_row))) {
       if (OB_UNLIKELY(OB_ITER_END != ret)) {
@@ -1036,18 +1031,17 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
         ret = OB_SUCCESS;
         break;
       }
-    } else if (OB_FAIL(sstable_writer.append_row(*datum_row, macro_block_writer))) {
-      LOG_WARN("fail to append row", KR(ret));
+    } else {
+      if (OB_FAIL(sstable_writer.append_row(thread_id, *datum_row, macro_block_writer))) {
+        LOG_WARN("fail to append row", KR(ret));
+      }
     }
   }
   if (OB_SUCC(ret)) {
-    // ob_load_data_direct_demo->mutex_.lock();
     if (OB_FAIL(sstable_writer.close_macro_block_writer(macro_block_writer))) {
       LOG_WARN("fail to close macro block writer", KR(ret));
     }
-    // ob_load_data_direct_demo->mutex_.unlock();
   }
-  ob_load_data_direct_demo->mutex2_.unlock();
   LOG_INFO("[THREAD_FINISH]", K(thread_id));
 }
 
