@@ -1119,7 +1119,7 @@ int ObLoadDataDirectDemo::get_bucket_index(const ObLoadDatumRow *datum_row, int 
 {
   int ret = OB_SUCCESS;
   for (int i = 0; i < sample_datumrows_.size(); i++) {
-    if (compare_(datum_row, sample_datumrows_[i]) == false) {
+    if (compare_(datum_row, sample_datumrows_[i]) == true) {
       bucket_index = i;
       return ret;
     }
