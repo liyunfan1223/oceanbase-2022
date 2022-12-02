@@ -715,6 +715,7 @@ int ObLoadSSTableWriter::init(const ObTableSchema *table_schema)
       datum_row_.storage_datums_[rowkey_column_num_].set_int(-1); // fill trans_version
       datum_row_.storage_datums_[rowkey_column_num_ + 1].set_int(0); // fill sql_no
       is_inited_ = true;
+      table_schema_ = table_schema;
     }
   }
   return ret;
@@ -773,7 +774,9 @@ int ObLoadSSTableWriter::init_macro_block_writer(uint64_t thread_id)
 {
   int ret = OB_SUCCESS;
   if (OB_SUCC(ret)) {
-    ObMacroDataSeq data_seq(thread_id * 1000);
+    ObMacroDataSeq data_seq(thread_id * 100);
+    data_seq.set_parallel_degree(THREAD_POOL_SIZE);
+    LOG_INFO("[DATA_DESC AND DATA_SEQ]", K(data_store_desc_), K(data_seq));
     if (OB_FAIL(macro_block_writer_[thread_id].open(data_store_desc_, data_seq))) {
       LOG_WARN("fail to init macro block writer", KR(ret), K(data_store_desc_), K(data_seq));
     }
@@ -876,7 +879,7 @@ int ObLoadSSTableWriter::create_sstable()
   return ret;
 }
 
-int ObLoadSSTableWriter::close(uint64_t thread_id)
+int ObLoadSSTableWriter::close_macro_block_writer(uint64_t thread_id)
 {
   int ret = OB_SUCCESS;
   if (IS_NOT_INIT) {
@@ -888,16 +891,19 @@ int ObLoadSSTableWriter::close(uint64_t thread_id)
   } else {
     if (OB_FAIL(macro_block_writer_[thread_id].close())) {
       LOG_WARN("fail to close macro block writer", KR(ret));
-    } else {
-      closed_thread_++;
-      if (closed_thread_ == THREAD_POOL_SIZE) {
-        if (OB_FAIL(create_sstable())) {
-          LOG_WARN("fail to create sstable", KR(ret));
-        } else {
-          is_closed_ = true;
-        }
-      }
     }
+  }
+  return ret;
+}
+
+int ObLoadSSTableWriter::close()
+{
+  int ret = OB_SUCCESS;
+  LOG_INFO("[CREATE_SSTABLE]");
+  if (OB_FAIL(create_sstable())) {
+    LOG_WARN("fail to create sstable", KR(ret));
+  } else {
+    is_closed_ = true;
   }
   return ret;
 }
@@ -994,11 +1000,13 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
 
 void ObLoadDataDirectDemo::MyThreadPool::run1()
 {
+  // ob_load_data_direct_demo->mutex2_.lock();
   ObTenantStatEstGuard stat_est_guard(MTL_ID());
   ObTenantBase *tenant_base = MTL_CTX();
   Worker::CompatMode mode = ((ObTenant *)tenant_base)->get_compat_mode();
   Worker::set_compatibility_mode(mode);
   uint64_t thread_id = get_thread_idx();
+  LOG_INFO("[THREAD_ID]", K(thread_id));
   // do work
 
   int ret = OB_SUCCESS;
@@ -1026,10 +1034,14 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
     }
   }
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(sstable_writer.close(thread_id))) {
-      LOG_WARN("fail to close sstable writer", KR(ret));
+    // ob_load_data_direct_demo->mutex_.lock();
+    if (OB_FAIL(sstable_writer.close_macro_block_writer(thread_id))) {
+      LOG_WARN("fail to close macro block writer", KR(ret));
     }
+    // ob_load_data_direct_demo->mutex_.unlock();
   }
+  // ob_load_data_direct_demo->mutex2_.unlock();
+  LOG_INFO("[THREAD_FINISH]", K(thread_id));
 }
 
 int ObLoadDataDirectDemo::do_load()
@@ -1082,9 +1094,10 @@ int ObLoadDataDirectDemo::do_load()
               generate_sample_datumrows();
             }
           } else {
-            int bucket_index;
+            int bucket_index = 0;
             get_bucket_index(datum_row, bucket_index);
             external_sort_[bucket_index].append_row(*datum_row);
+            LOG_INFO("[BUCKET_INDEX]", K(bucket_index));
           }
         }
       }
@@ -1095,8 +1108,17 @@ int ObLoadDataDirectDemo::do_load()
   }
   thread_pool_.set_thread_count(THREAD_POOL_SIZE);
   thread_pool_.set_run_wrapper(MTL_CTX());
+  LOG_INFO("[THREAD_POOL] start.");
   thread_pool_.start();
+  LOG_INFO("[THREAD_POOL] wait.");
   thread_pool_.wait();
+  LOG_INFO("[THREAD_POOL] stop.");
+  thread_pool_.stop();
+  LOG_INFO("[THREAD_POOL] destroy.");
+  thread_pool_.destroy();
+  if (OB_FAIL(sstable_writer_.close())) {
+    LOG_WARN("fail to close sstable writer", KR(ret));
+  }
   return ret;
 }
 
@@ -1108,9 +1130,10 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
     sample_datumrows_.push_back(datumrow_list_[(datumrow_list_.size() - 1) / THREAD_POOL_SIZE * i]);
   }
   for (int i = 0; i < datumrow_list_.size(); i++) {
-    int bucket_index;
+    int bucket_index = 0;
     get_bucket_index(datumrow_list_[i], bucket_index);
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
+    LOG_INFO("[BUCKET_INDEX]", K(bucket_index));
   }
   sample_inited_ = true;
   return ret;

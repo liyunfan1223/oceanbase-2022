@@ -163,19 +163,21 @@ private:
 
 class ObLoadSSTableWriter
 {
-  static const int64_t THREAD_POOL_SIZE = 1;
+  static const int64_t THREAD_POOL_SIZE = 4;
 public:
   ObLoadSSTableWriter();
   ~ObLoadSSTableWriter();
   int init(const share::schema::ObTableSchema *table_schema);
   int append_row(const ObLoadDatumRow &datum_row, uint64_t thread_id);
-  int close(uint64_t thread_id);
+  int close_macro_block_writer(uint64_t thread_id);
+  int close();
   int init_macro_block_writer(uint64_t thread_id);
 private:
   int init_sstable_index_builder(const share::schema::ObTableSchema *table_schema);
   int init_data_store_desc(const share::schema::ObTableSchema *table_schema);
   int create_sstable();
 private:
+  const ObTableSchema *table_schema_;
   common::ObTabletID tablet_id_;
   storage::ObTabletHandle tablet_handle_;
   share::ObLSID ls_id_;
@@ -204,7 +206,7 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
   };
   static const int64_t MEM_BUFFER_SIZE = (6LL << 30);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
-  static const int64_t THREAD_POOL_SIZE = 1;
+  static const int64_t THREAD_POOL_SIZE = 4;
   static const int64_t SAMPLE_POOL_SIZE = 1000;
 public:
   ObLoadDataDirectDemo();
@@ -216,6 +218,7 @@ private:
   int generate_sample_datumrows();
   int get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index);
 private:
+  lib::ObMutex mutex_, mutex2_;
   MyThreadPool thread_pool_;
   common::ObVector<ObLoadDatumRow *> datumrow_list_;
   common::ObVector<ObLoadDatumRow *> sample_datumrows_;
