@@ -770,21 +770,26 @@ int ObLoadSSTableWriter::init_data_store_desc(const ObTableSchema *table_schema)
   return ret;
 }
 
-int ObLoadSSTableWriter::init_macro_block_writer(uint64_t thread_id)
+int ObLoadSSTableWriter::init_macro_block_writer(uint64_t thread_id, blocksstable::ObMacroBlockWriter &macro_block_writer)
 {
   int ret = OB_SUCCESS;
+  // if (OB_FAIL(data_store_descs_[thread_id].init(*table_schema, ls_id_, tablet_id_, MAJOR_MERGE, 1))) {
+  //   LOG_WARN("fail to init data_store_desc", KR(ret), K(tablet_id_));
+  // } else {
+  //   data_store_descs_[thread_id].sstable_index_builder_ = &sstable_index_builder_;
+  // }
   if (OB_SUCC(ret)) {
-    ObMacroDataSeq data_seq(thread_id * 100);
-    data_seq.set_parallel_degree(THREAD_POOL_SIZE);
+    ObMacroDataSeq data_seq(thread_id * 10000);
+    // data_seq.set_parallel_degree(THREAD_POOL_SIZE);
     LOG_INFO("[DATA_DESC AND DATA_SEQ]", K(data_store_desc_), K(data_seq));
-    if (OB_FAIL(macro_block_writer_[thread_id].open(data_store_desc_, data_seq))) {
+    if (OB_FAIL(macro_block_writer.open(data_store_desc_, data_seq))) {
       LOG_WARN("fail to init macro block writer", KR(ret), K(data_store_desc_), K(data_seq));
     }
   }
   return ret;
 }
 
-int ObLoadSSTableWriter::append_row(const ObLoadDatumRow &datum_row, uint64_t thread_id)
+int ObLoadSSTableWriter::append_row(const ObLoadDatumRow &datum_row, blocksstable::ObMacroBlockWriter &macro_block_writer)
 {
   int ret = OB_SUCCESS;
   if (IS_NOT_INIT) {
@@ -804,7 +809,8 @@ int ObLoadSSTableWriter::append_row(const ObLoadDatumRow &datum_row, uint64_t th
         datum_row_.storage_datums_[i + extra_rowkey_column_num_] = datum_row.datums_[i];
       }
     }
-    if (OB_FAIL(macro_block_writer_[thread_id].append_row(datum_row_))) {
+    LOG_INFO("try append row", K(datum_row_));
+    if (OB_FAIL(macro_block_writer.append_row(datum_row_))) {
       LOG_WARN("fail to append row", KR(ret));
     }
   }
@@ -879,7 +885,7 @@ int ObLoadSSTableWriter::create_sstable()
   return ret;
 }
 
-int ObLoadSSTableWriter::close_macro_block_writer(uint64_t thread_id)
+int ObLoadSSTableWriter::close_macro_block_writer(blocksstable::ObMacroBlockWriter &macro_block_writer)
 {
   int ret = OB_SUCCESS;
   if (IS_NOT_INIT) {
@@ -889,7 +895,7 @@ int ObLoadSSTableWriter::close_macro_block_writer(uint64_t thread_id)
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("unexpected closed sstable writer", KR(ret));
   } else {
-    if (OB_FAIL(macro_block_writer_[thread_id].close())) {
+    if (OB_FAIL(macro_block_writer.close())) {
       LOG_WARN("fail to close macro block writer", KR(ret));
     }
   }
@@ -1000,7 +1006,7 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
 
 void ObLoadDataDirectDemo::MyThreadPool::run1()
 {
-  // ob_load_data_direct_demo->mutex2_.lock();
+  
   ObTenantStatEstGuard stat_est_guard(MTL_ID());
   ObTenantBase *tenant_base = MTL_CTX();
   Worker::CompatMode mode = ((ObTenant *)tenant_base)->get_compat_mode();
@@ -1014,13 +1020,14 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
 
   ObLoadExternalSort & external_sort = ob_load_data_direct_demo->external_sort_[thread_id];
   ObLoadSSTableWriter & sstable_writer = ob_load_data_direct_demo->sstable_writer_;
-  const ObTableSchema *table_schema = ob_load_data_direct_demo->table_schema_;
-  sstable_writer.init_macro_block_writer(thread_id);
+  blocksstable::ObMacroBlockWriter macro_block_writer;
+  sstable_writer.init_macro_block_writer(thread_id, macro_block_writer);
   if (OB_SUCC(ret)) {
     if (OB_FAIL(external_sort.close())) {
       LOG_WARN("fail to close external sort", KR(ret));
     }
   }
+  ob_load_data_direct_demo->mutex2_.lock();
   while (OB_SUCC(ret)) {
     if (OB_FAIL(external_sort.get_next_row(datum_row))) {
       if (OB_UNLIKELY(OB_ITER_END != ret)) {
@@ -1029,18 +1036,18 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
         ret = OB_SUCCESS;
         break;
       }
-    } else if (OB_FAIL(sstable_writer.append_row(*datum_row, thread_id))) {
+    } else if (OB_FAIL(sstable_writer.append_row(*datum_row, macro_block_writer))) {
       LOG_WARN("fail to append row", KR(ret));
     }
   }
   if (OB_SUCC(ret)) {
     // ob_load_data_direct_demo->mutex_.lock();
-    if (OB_FAIL(sstable_writer.close_macro_block_writer(thread_id))) {
+    if (OB_FAIL(sstable_writer.close_macro_block_writer(macro_block_writer))) {
       LOG_WARN("fail to close macro block writer", KR(ret));
     }
     // ob_load_data_direct_demo->mutex_.unlock();
   }
-  // ob_load_data_direct_demo->mutex2_.unlock();
+  ob_load_data_direct_demo->mutex2_.unlock();
   LOG_INFO("[THREAD_FINISH]", K(thread_id));
 }
 
@@ -1097,7 +1104,6 @@ int ObLoadDataDirectDemo::do_load()
             int bucket_index = 0;
             get_bucket_index(datum_row, bucket_index);
             external_sort_[bucket_index].append_row(*datum_row);
-            LOG_INFO("[BUCKET_INDEX]", K(bucket_index));
           }
         }
       }
@@ -1115,6 +1121,7 @@ int ObLoadDataDirectDemo::do_load()
   LOG_INFO("[THREAD_POOL] stop.");
   thread_pool_.stop();
   LOG_INFO("[THREAD_POOL] destroy.");
+  LOG_INFO("[MTL_ID]", K(MTL_ID()));
   thread_pool_.destroy();
   if (OB_FAIL(sstable_writer_.close())) {
     LOG_WARN("fail to close sstable writer", KR(ret));
@@ -1133,7 +1140,7 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
     int bucket_index = 0;
     get_bucket_index(datumrow_list_[i], bucket_index);
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
-    LOG_INFO("[BUCKET_INDEX]", K(bucket_index));
+    // LOG_INFO("[BUCKET_INDEX]", K(bucket_index));
   }
   sample_inited_ = true;
   return ret;

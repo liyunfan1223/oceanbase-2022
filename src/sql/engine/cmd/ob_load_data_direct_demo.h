@@ -163,15 +163,16 @@ private:
 
 class ObLoadSSTableWriter
 {
-  static const int64_t THREAD_POOL_SIZE = 4;
+  static const int64_t THREAD_POOL_SIZE = 8;
 public:
   ObLoadSSTableWriter();
   ~ObLoadSSTableWriter();
   int init(const share::schema::ObTableSchema *table_schema);
-  int append_row(const ObLoadDatumRow &datum_row, uint64_t thread_id);
-  int close_macro_block_writer(uint64_t thread_id);
+  int append_row(const ObLoadDatumRow &datum_row, blocksstable::ObMacroBlockWriter &macro_block_writer);
+  int close_macro_block_writer(blocksstable::ObMacroBlockWriter &macro_block_writer);
   int close();
-  int init_macro_block_writer(uint64_t thread_id);
+  int init_macro_block_writer(uint64_t thread_id, blocksstable::ObMacroBlockWriter &macro_block_writer);
+  blocksstable::ObDataStoreDesc data_store_desc_;
 private:
   int init_sstable_index_builder(const share::schema::ObTableSchema *table_schema);
   int init_data_store_desc(const share::schema::ObTableSchema *table_schema);
@@ -187,8 +188,8 @@ private:
   int64_t column_count_;
   storage::ObITable::TableKey table_key_;
   blocksstable::ObSSTableIndexBuilder sstable_index_builder_;
-  blocksstable::ObDataStoreDesc data_store_desc_;
-  blocksstable::ObMacroBlockWriter macro_block_writer_[THREAD_POOL_SIZE];
+  blocksstable::ObDataStoreDesc data_store_descs_[THREAD_POOL_SIZE];
+  // blocksstable::ObMacroBlockWriter macro_block_writer_[THREAD_POOL_SIZE];
   blocksstable::ObDatumRow datum_row_;
   bool is_closed_;
   bool is_inited_;
@@ -206,8 +207,8 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
   };
   static const int64_t MEM_BUFFER_SIZE = (6LL << 30);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
-  static const int64_t THREAD_POOL_SIZE = 4;
-  static const int64_t SAMPLE_POOL_SIZE = 1000;
+  static const int64_t THREAD_POOL_SIZE = 8;
+  static const int64_t SAMPLE_POOL_SIZE = 10000;
 public:
   ObLoadDataDirectDemo();
   virtual ~ObLoadDataDirectDemo();
