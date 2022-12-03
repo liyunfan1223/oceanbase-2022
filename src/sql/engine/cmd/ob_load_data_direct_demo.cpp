@@ -1135,7 +1135,6 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
     get_bucket_index(datumrow_list_[i], bucket_index);
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
   }
-  allocator_.reset();
   sample_inited_ = true;
   return ret;
 }
