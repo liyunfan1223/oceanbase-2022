@@ -1142,13 +1142,27 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
 int ObLoadDataDirectDemo::get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index)
 {
   int ret = OB_SUCCESS;
-  for (int i = 0; i < sample_datumrows_.size(); i++) {
-    if (compare_(datum_row, sample_datumrows_[i]) == true) {
-      bucket_index = i;
-      return ret;
+  int l = 0, r = sample_datumrows_.size();
+  bucket_index = -1;
+  while (l < r) {
+    int mid = (l + r) >> 1;
+    if (compare_(datum_row, sample_datumrows_[mid]) == true) {
+      bucket_index = mid;
+      r = mid - 1;
+    } else {
+      l = mid + 1;
     }
   }
-  bucket_index = sample_datumrows_.size();
+  if (bucket_index == -1) {
+    bucket_index = sample_datumrows_.size();
+  }
+  // for (int i = 0; i < sample_datumrows_.size(); i++) {
+  //   if (compare_(datum_row, sample_datumrows_[i]) == true) {
+  //     bucket_index = i;
+  //     return ret;
+  //   }
+  // }
+  // bucket_index = sample_datumrows_.size();
   return ret;
 }
 
