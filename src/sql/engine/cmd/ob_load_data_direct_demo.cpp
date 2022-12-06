@@ -1080,14 +1080,14 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
 
   int ret = OB_SUCCESS;
   const ObNewRow *next_row = nullptr;
-  const ObNewRow *ob_row = nullptr;
-  common::ObVector<const ObNewRow *> ob_row_vec;
+  ObNewRow *ob_row = nullptr;
+  common::ObVector<ObNewRow *> ob_row_vec;
 
   const ObLoadDatumRow *datum_row = nullptr;
   ObLoadDatumRow *new_item = NULL;
 
   char *buf = NULL;
-  int sample_count = 0;
+  int &sample_count = ob_load_data_direct_demo->sample_count_;
   // ob_load_data_direct_demo->mutex3_.lock();
 
   while (OB_SUCC(ret)) {
@@ -1116,31 +1116,32 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
           LOG_WARN("fail to get next row", KR(ret));
         } else {
           ret = OB_SUCCESS;
-          // ob_load_data_direct_demo->mutex2_.unlock();
           break;
         }
-      } 
-      const int64_t item_size = sizeof(ObNewRow) + next_row->get_deep_copy_size();
-      int64_t buf_pos = sizeof(ObNewRow);
-      buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
-      ob_row = new (buf) ObNewRow();
-      ob_row->deep_copy(*next_row, buf, item_size, buf_pos);
-      ob_row_vec.push_back(ob_row);
+      } else {
+        const int64_t item_size = sizeof(ObNewRow) + next_row->get_deep_copy_size();
+        int64_t buf_pos = sizeof(ObNewRow);
+        buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
+        ob_row = new (buf) ObNewRow();
+        ob_row->deep_copy(*next_row, buf, item_size, buf_pos);
+        ob_row_vec.push_back(ob_row);
+      }
     }
     ob_load_data_direct_demo->mutex2_.unlock();
 
     for (int i = 0; i < ob_row_vec.size(); i++) {
-      const ObNewRow *new_row = &ob_row_vec[i];
-      if (OB_FAIL(row_caster.get_casted_row(*new_row, datum_row))) {
+      if (OB_FAIL(row_caster.get_casted_row(*ob_row_vec[i], datum_row))) {
         LOG_WARN("fail to cast row", KR(ret));
       } else {
         ob_load_data_direct_demo->mutex_.lock();
         if (!ob_load_data_direct_demo->sample_inited_) {
           const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
           int64_t buf_pos = sizeof(ObLoadDatumRow);
+          ob_load_data_direct_demo->mutex2_.lock();
           buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
           new_item = new (buf) ObLoadDatumRow();
           new_item->deep_copy(*datum_row, buf, item_size, buf_pos);
+          ob_load_data_direct_demo->mutex2_.unlock();
           ob_load_data_direct_demo->datumrow_list_.push_back(new_item);
           sample_count++;
           if (sample_count == SAMPLE_POOL_SIZE) {
@@ -1213,6 +1214,7 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
   }
   sample_inited_ = true;
+  sample_count_ = 0;
   return ret;
 }
 

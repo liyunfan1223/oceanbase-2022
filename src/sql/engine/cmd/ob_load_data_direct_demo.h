@@ -246,6 +246,7 @@ private:
   ObLoadExternalSort external_sort_[THREAD_POOL_SIZE];
   ObLoadSSTableWriter sstable_writer_;
   int sample_inited_;
+  int sample_count_;
 };
 
 } // namespace sql
