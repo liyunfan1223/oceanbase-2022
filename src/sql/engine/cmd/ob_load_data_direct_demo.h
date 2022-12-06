@@ -50,6 +50,7 @@ private:
   common::ObFileReader file_reader_;
   int64_t offset_;
   bool is_read_end_;
+  lib::ObMutex mutex;
 };
 
 class ObLoadCSVPaser
@@ -163,7 +164,7 @@ private:
 
 class ObLoadSSTableWriter
 {
-  static const int64_t THREAD_POOL_SIZE = 1;
+  static const int64_t THREAD_POOL_SIZE = 12;
 public:
   ObLoadSSTableWriter();
   ~ObLoadSSTableWriter();
@@ -205,9 +206,16 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
     public:
     ObLoadDataDirectDemo * ob_load_data_direct_demo;
   };
-  static const int64_t MEM_BUFFER_SIZE = (6LL << 30);
+  class MyThreadPool2: public ObThreadPool
+  {
+    public:
+    void run1() override;
+    public:
+    ObLoadDataDirectDemo * ob_load_data_direct_demo;
+  };
+  static const int64_t MEM_BUFFER_SIZE = (512 << 20);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
-  static const int64_t THREAD_POOL_SIZE = 1;
+  static const int64_t THREAD_POOL_SIZE = 12;
   static const int64_t SAMPLE_POOL_SIZE = 10000;
 public:
   ObLoadDataDirectDemo();
@@ -218,19 +226,24 @@ private:
   int do_load();
   int generate_sample_datumrows();
   int get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index);
+  int init_csv_parser(ObLoadDataStmt &load_stmt);
+  int init_buffer();
+  int init_row_caster();
 private:
-  // lib::ObMutex mutex_, mutex2_;
+  lib::ObMutex mutex_, mutex_for_bucket_[THREAD_POOL_SIZE];
   MyThreadPool thread_pool_;
+  MyThreadPool2 thread_pool2_;
+  int bucket_counter_[THREAD_POOL_SIZE];
   common::ObVector<ObLoadDatumRow *> datumrow_list_;
   common::ObVector<ObLoadDatumRow *> sample_datumrows_;
   ObLoadDatumRowCompare compare_;
   common::ObArenaAllocator allocator_;
   blocksstable::ObStorageDatumUtils datum_utils_;
   const share::schema::ObTableSchema *table_schema_ = nullptr;
-  ObLoadCSVPaser csv_parser_;
+  ObLoadCSVPaser csv_parser_[THREAD_POOL_SIZE];
   ObLoadSequentialFileReader file_reader_;
-  ObLoadDataBuffer buffer_;
-  ObLoadRowCaster row_caster_;
+  ObLoadDataBuffer buffer_[THREAD_POOL_SIZE];
+  ObLoadRowCaster row_caster_[THREAD_POOL_SIZE];
   ObLoadExternalSort external_sort_[THREAD_POOL_SIZE];
   ObLoadSSTableWriter sstable_writer_;
   int sample_inited_;

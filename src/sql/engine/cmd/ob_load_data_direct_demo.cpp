@@ -110,6 +110,7 @@ int ObLoadSequentialFileReader::open(const ObString &filepath)
 
 int ObLoadSequentialFileReader::read_next_buffer(ObLoadDataBuffer &buffer)
 {
+  mutex.trylock();
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!file_reader_.is_opened())) {
     ret = OB_FILE_NOT_OPENED;
@@ -129,6 +130,7 @@ int ObLoadSequentialFileReader::read_next_buffer(ObLoadDataBuffer &buffer)
       buffer.produce(read_size);
     }
   }
+  mutex.unlock();
   return ret;
 }
 
@@ -957,28 +959,36 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
     LOG_WARN("not support heap table", KR(ret));
   }
   // init csv_parser_
-  else if (OB_FAIL(csv_parser_.init(load_stmt.get_data_struct_in_file(), field_or_var_list.count(),
-                                    load_args.file_cs_type_))) {
-    LOG_WARN("fail to init csv parser", KR(ret));
+  else {
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+      if (OB_FAIL(csv_parser_[i].init(load_stmt.get_data_struct_in_file(), field_or_var_list.count(),
+                                      load_args.file_cs_type_))) {
+        LOG_WARN("fail to init csv parser", KR(ret));
+      }
+    }
   }
   // init file_reader_
-  else if (OB_FAIL(file_reader_.open(load_args.full_file_path_))) {
+  if (OB_FAIL(file_reader_.open(load_args.full_file_path_))) {
     LOG_WARN("fail to open file", KR(ret), K(load_args.full_file_path_));
   }
   // init buffer_
-  else if (OB_FAIL(buffer_.create(FILE_BUFFER_SIZE))) {
-    LOG_WARN("fail to create buffer", KR(ret));
-  }
-  // init row_caster_
-  else if (OB_FAIL(row_caster_.init(table_schema_, field_or_var_list))) {
-    LOG_WARN("fail to init row caster", KR(ret));
-  }
-  // init external_sort_
   else {
     for (int i = 0; i < THREAD_POOL_SIZE; i++) {
-      if (OB_FAIL(external_sort_[i].init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
-        LOG_WARN("fail to init row caster", KR(ret));
+      if (OB_FAIL(buffer_[i].create(FILE_BUFFER_SIZE))) {
+        LOG_WARN("fail to create buffer", KR(ret));
       }
+    }
+  }
+  // init row_caster_
+  for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+    if (OB_FAIL(row_caster_[i].init(table_schema_, field_or_var_list))) {
+      LOG_WARN("fail to init row caster", KR(ret));
+    }
+  }
+  // init external_sort_
+  for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+    if (OB_FAIL(external_sort_[i].init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
+      LOG_WARN("fail to init row caster", KR(ret));
     }
   }
   // init sstable_writer_
@@ -997,6 +1007,8 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   }
   sample_inited_ = false;
   thread_pool_.ob_load_data_direct_demo = this;
+  thread_pool2_.ob_load_data_direct_demo = this;
+  memset(bucket_counter_, 0, sizeof(bucket_counter_));
   return ret;
 }
 
@@ -1009,6 +1021,7 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
   Worker::set_compatibility_mode(mode);
   uint64_t thread_id = get_thread_idx();
   LOG_INFO("[THREAD_ID]", K(thread_id));
+  LOG_INFO("[BUCKET_COUNTER]", K(ob_load_data_direct_demo->bucket_counter_[thread_id]));
   // do work
 
   int ret = OB_SUCCESS;
@@ -1045,8 +1058,19 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
   LOG_INFO("[THREAD_FINISH]", K(thread_id));
 }
 
-int ObLoadDataDirectDemo::do_load()
+void ObLoadDataDirectDemo::MyThreadPool2::run1()
 {
+  ObTenantStatEstGuard stat_est_guard(MTL_ID());
+  ObTenantBase *tenant_base = MTL_CTX();
+  Worker::CompatMode mode = ((ObTenant *)tenant_base)->get_compat_mode();
+  Worker::set_compatibility_mode(mode);
+  uint64_t thread_id = get_thread_idx();
+  //do work
+
+  ObLoadDataBuffer &buffer_ = ob_load_data_direct_demo->buffer_[thread_id];
+  ObLoadCSVPaser &csv_parser_ = ob_load_data_direct_demo->csv_parser_[thread_id];
+  ObLoadRowCaster &row_caster_ = ob_load_data_direct_demo->row_caster_[thread_id];
+
   int ret = OB_SUCCESS;
   const ObNewRow *new_row = nullptr;
   const ObLoadDatumRow *datum_row = nullptr;
@@ -1057,7 +1081,7 @@ int ObLoadDataDirectDemo::do_load()
   while (OB_SUCC(ret)) {
     if (OB_FAIL(buffer_.squash())) {
       LOG_WARN("fail to squash buffer", KR(ret));
-    } else if (OB_FAIL(file_reader_.read_next_buffer(buffer_))) {
+    } else if (OB_FAIL(ob_load_data_direct_demo->file_reader_.read_next_buffer(buffer_))) {
       if (OB_UNLIKELY(OB_ITER_END != ret)) {
         LOG_WARN("fail to read next buffer", KR(ret));
       } else {
@@ -1083,29 +1107,113 @@ int ObLoadDataDirectDemo::do_load()
         } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
           LOG_WARN("fail to cast row", KR(ret));
         } else {
-          if (!sample_inited_) {
+          if (!ob_load_data_direct_demo->sample_inited_) {
+            ob_load_data_direct_demo->mutex_.trylock();
             const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
             int64_t buf_pos = sizeof(ObLoadDatumRow);
-            buf = static_cast<char *>(allocator_.alloc(item_size));
+            buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
             new_item = new (buf) ObLoadDatumRow();
             new_item->deep_copy(*datum_row, buf, item_size, buf_pos);
-            datumrow_list_.push_back(new_item);
+            ob_load_data_direct_demo->datumrow_list_.push_back(new_item);
             sample_count++;
             if (sample_count == SAMPLE_POOL_SIZE) {
-              generate_sample_datumrows();
+              ob_load_data_direct_demo->generate_sample_datumrows();
             }
+            ob_load_data_direct_demo->mutex_.unlock();
           } else {
             int bucket_index = 0;
-            get_bucket_index(datum_row, bucket_index);
-            external_sort_[bucket_index].append_row(*datum_row);
+            ob_load_data_direct_demo->get_bucket_index(datum_row, bucket_index);
+            ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].trylock();
+            ob_load_data_direct_demo->bucket_counter_[bucket_index]++;
+            ob_load_data_direct_demo->external_sort_[bucket_index].append_row(*datum_row);
+            ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].unlock();
           }
         }
       }
     }
   }
-  if (!sample_inited_) {
-    generate_sample_datumrows();
+  ob_load_data_direct_demo->mutex_.trylock();
+  if (!ob_load_data_direct_demo->sample_inited_) {
+    ob_load_data_direct_demo->generate_sample_datumrows();
   }
+  ob_load_data_direct_demo->mutex_.unlock();
+}
+
+int ObLoadDataDirectDemo::do_load()
+{
+  int ret = OB_SUCCESS;
+  // const ObNewRow *new_row = nullptr;
+  // const ObLoadDatumRow *datum_row = nullptr;
+
+  // char *buf = NULL;
+  // ObLoadDatumRow *new_item = NULL;
+  // int sample_count = 0;
+  // while (OB_SUCC(ret)) {
+  //   if (OB_FAIL(buffer_.squash())) {
+  //     LOG_WARN("fail to squash buffer", KR(ret));
+  //   } else if (OB_FAIL(file_reader_.read_next_buffer(buffer_))) {
+  //     if (OB_UNLIKELY(OB_ITER_END != ret)) {
+  //       LOG_WARN("fail to read next buffer", KR(ret));
+  //     } else {
+  //       if (OB_UNLIKELY(!buffer_.empty())) {
+  //         ret = OB_ERR_UNEXPECTED;
+  //         LOG_WARN("unexpected incomplate data", KR(ret));
+  //       }
+  //       ret = OB_SUCCESS;
+  //       break;
+  //     }
+  //   } else if (OB_UNLIKELY(buffer_.empty())) {
+  //     ret = OB_ERR_UNEXPECTED;
+  //     LOG_WARN("unexpected empty buffer", KR(ret));
+  //   } else {
+  //     while (OB_SUCC(ret)) {
+  //       if (OB_FAIL(csv_parser_.get_next_row(buffer_, new_row))) {
+  //         if (OB_UNLIKELY(OB_ITER_END != ret)) {
+  //           LOG_WARN("fail to get next row", KR(ret));
+  //         } else {
+  //           ret = OB_SUCCESS;
+  //           break;
+  //         }
+  //       } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
+  //         LOG_WARN("fail to cast row", KR(ret));
+  //       } else {
+  //         if (!sample_inited_) {
+  //           const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
+  //           int64_t buf_pos = sizeof(ObLoadDatumRow);
+  //           buf = static_cast<char *>(allocator_.alloc(item_size));
+  //           new_item = new (buf) ObLoadDatumRow();
+  //           new_item->deep_copy(*datum_row, buf, item_size, buf_pos);
+  //           datumrow_list_.push_back(new_item);
+  //           sample_count++;
+  //           if (sample_count == SAMPLE_POOL_SIZE) {
+  //             generate_sample_datumrows();
+  //           }
+  //         } else {
+  //           int bucket_index = 0;
+  //           get_bucket_index(datum_row, bucket_index);
+  //           bucket_counter_[bucket_index]++;
+  //           external_sort_[bucket_index].append_row(*datum_row);
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
+  // if (!sample_inited_) {
+  //   generate_sample_datumrows();
+  // }
+  
+  thread_pool2_.set_thread_count(THREAD_POOL_SIZE);
+  thread_pool2_.set_run_wrapper(MTL_CTX());
+  LOG_INFO("[THREAD_POOL2] start.");
+  thread_pool2_.start();
+  LOG_INFO("[THREAD_POOL2] wait.");
+  thread_pool2_.wait();
+  LOG_INFO("[THREAD_POOL2] stop.");
+  thread_pool2_.stop();
+  LOG_INFO("[THREAD_POOL2] destroy.");
+  thread_pool2_.destroy();
+  
+
   thread_pool_.set_thread_count(THREAD_POOL_SIZE);
   thread_pool_.set_run_wrapper(MTL_CTX());
   LOG_INFO("[THREAD_POOL] start.");
@@ -1115,7 +1223,6 @@ int ObLoadDataDirectDemo::do_load()
   LOG_INFO("[THREAD_POOL] stop.");
   thread_pool_.stop();
   LOG_INFO("[THREAD_POOL] destroy.");
-  LOG_INFO("[MTL_ID]", K(MTL_ID()));
   thread_pool_.destroy();
   if (OB_FAIL(sstable_writer_.close())) {
     LOG_WARN("fail to close sstable writer", KR(ret));
@@ -1133,6 +1240,7 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
   for (int i = 0; i < datumrow_list_.size(); i++) {
     int bucket_index = 0;
     get_bucket_index(datumrow_list_[i], bucket_index);
+    bucket_counter_[bucket_index]++;
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
   }
   sample_inited_ = true;
@@ -1141,21 +1249,7 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
 
 int ObLoadDataDirectDemo::get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index)
 {
-  int ret = OB_SUCCESS;
-  // int l = 0, r = sample_datumrows_.size();
-  // bucket_index = -1;
-  // while (l < r) {
-  //   int mid = (l + r) >> 1;
-  //   if (compare_(datum_row, sample_datumrows_[mid]) == true) {
-  //     bucket_index = mid;
-  //     r = mid - 1;
-  //   } else {
-  //     l = mid + 1;
-  //   }
-  // }
-  // if (bucket_index == -1) {
-  //   bucket_index = sample_datumrows_.size();
-  // }
+  int ret = OB_SUCCESS; 
   for (int i = 0; i < sample_datumrows_.size(); i++) {
     if (compare_(datum_row, sample_datumrows_[i]) == true) {
       bucket_index = i;
