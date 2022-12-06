@@ -1085,6 +1085,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
   char *buf = NULL;
   ObLoadDatumRow *new_item = NULL;
   int sample_count = 0;
+  ob_load_data_direct_demo->mutex3_.lock();
   while (OB_SUCC(ret)) {
     ob_load_data_direct_demo->mutex2_.lock();
     if (OB_FAIL(buffer.squash())) {
@@ -1139,7 +1140,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
             }
             ob_load_data_direct_demo->mutex_.unlock();
           } else {
-            int bucket_index;
+            int bucket_index = 0;
             ob_load_data_direct_demo->get_bucket_index(datum_row, bucket_index);
             ob_load_data_direct_demo->mutex_.unlock();
             ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].lock();
@@ -1151,6 +1152,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
       }
     }
   }
+  ob_load_data_direct_demo->mutex3_.unlock();
   ob_load_data_direct_demo->mutex_.lock();
   if (!ob_load_data_direct_demo->sample_inited_) {
     ob_load_data_direct_demo->generate_sample_datumrows();
@@ -1197,7 +1199,7 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
     sample_datumrows_.push_back(datumrow_list_[(datumrow_list_.size() - 1) / THREAD_POOL_SIZE * i]);
   }
   for (int i = 0; i < datumrow_list_.size(); i++) {
-    int bucket_index;
+    int bucket_index = 0;
     get_bucket_index(datumrow_list_[i], bucket_index);
     bucket_counter_[bucket_index]++;
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
