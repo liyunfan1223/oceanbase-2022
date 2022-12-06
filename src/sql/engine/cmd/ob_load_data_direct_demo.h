@@ -189,7 +189,6 @@ private:
   int64_t column_count_;
   storage::ObITable::TableKey table_key_;
   blocksstable::ObSSTableIndexBuilder sstable_index_builder_;
-  blocksstable::ObDataStoreDesc data_store_descs_[THREAD_POOL_SIZE];
   // blocksstable::ObDatumRow datum_row_;
   blocksstable::ObDatumRow datum_rows_[THREAD_POOL_SIZE];
   bool is_closed_;
@@ -230,7 +229,7 @@ private:
   int init_buffer();
   int init_row_caster();
 private:
-  lib::ObMutex mutex_, mutex_for_bucket_[THREAD_POOL_SIZE];
+  lib::ObMutex mutex_, mutex2_, mutex_for_bucket_[THREAD_POOL_SIZE];
   MyThreadPool thread_pool_;
   MyThreadPool2 thread_pool2_;
   int bucket_counter_[THREAD_POOL_SIZE];
@@ -240,10 +239,11 @@ private:
   common::ObArenaAllocator allocator_;
   blocksstable::ObStorageDatumUtils datum_utils_;
   const share::schema::ObTableSchema *table_schema_ = nullptr;
-  ObLoadCSVPaser csv_parser_[THREAD_POOL_SIZE];
+  ObLoadDataStmt *load_stmt_;
+  // ObLoadCSVPaser csv_parser_[THREAD_POOL_SIZE];
   ObLoadSequentialFileReader file_reader_;
-  ObLoadDataBuffer buffer_[THREAD_POOL_SIZE];
-  ObLoadRowCaster row_caster_[THREAD_POOL_SIZE];
+  // ObLoadDataBuffer buffer_[THREAD_POOL_SIZE];
+  // ObLoadRowCaster row_caster_[THREAD_POOL_SIZE];
   ObLoadExternalSort external_sort_[THREAD_POOL_SIZE];
   ObLoadSSTableWriter sstable_writer_;
   int sample_inited_;

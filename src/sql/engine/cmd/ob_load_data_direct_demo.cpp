@@ -110,7 +110,7 @@ int ObLoadSequentialFileReader::open(const ObString &filepath)
 
 int ObLoadSequentialFileReader::read_next_buffer(ObLoadDataBuffer &buffer)
 {
-  mutex.trylock();
+  mutex.lock();
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!file_reader_.is_opened())) {
     ret = OB_FILE_NOT_OPENED;
@@ -807,7 +807,7 @@ int ObLoadSSTableWriter::append_row(int thread_id, const ObLoadDatumRow &datum_r
         datum_rows_[thread_id].storage_datums_[i + extra_rowkey_column_num_] = datum_row.datums_[i];
       }
     }
-    LOG_INFO("try append row", K(datum_rows_[thread_id]));
+    // LOG_INFO("try append row", K(datum_rows_[thread_id]));
     if (OB_FAIL(macro_block_writer.append_row(datum_rows_[thread_id]))) {
       LOG_WARN("fail to append row", KR(ret));
     }
@@ -938,6 +938,7 @@ int ObLoadDataDirectDemo::execute(ObExecContext &ctx, ObLoadDataStmt &load_stmt)
 int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
 {
   int ret = OB_SUCCESS;
+  load_stmt_ = &load_stmt;
   const ObLoadArgument &load_args = load_stmt.get_load_arguments();
   const ObIArray<ObLoadDataStmt::FieldOrVarStruct> &field_or_var_list =
     load_stmt.get_field_or_var_list();
@@ -958,33 +959,35 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
     ret = OB_NOT_SUPPORTED;
     LOG_WARN("not support heap table", KR(ret));
   }
-  // init csv_parser_
-  else {
-    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
-      if (OB_FAIL(csv_parser_[i].init(load_stmt.get_data_struct_in_file(), field_or_var_list.count(),
-                                      load_args.file_cs_type_))) {
-        LOG_WARN("fail to init csv parser", KR(ret));
-      }
-    }
-  }
+  // // init csv_parser_
+  // else {
+  //   for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+  //     if (OB_FAIL(csv_parser_[i].init(load_stmt.get_data_struct_in_file(), field_or_var_list.count(),
+  //                                     load_args.file_cs_type_))) {
+  //       LOG_WARN("fail to init csv parser", KR(ret));
+  //     }
+  //   }
+  // }
   // init file_reader_
   if (OB_FAIL(file_reader_.open(load_args.full_file_path_))) {
     LOG_WARN("fail to open file", KR(ret), K(load_args.full_file_path_));
   }
-  // init buffer_
-  else {
-    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
-      if (OB_FAIL(buffer_[i].create(FILE_BUFFER_SIZE))) {
-        LOG_WARN("fail to create buffer", KR(ret));
-      }
-    }
-  }
-  // init row_caster_
-  for (int i = 0; i < THREAD_POOL_SIZE; i++) {
-    if (OB_FAIL(row_caster_[i].init(table_schema_, field_or_var_list))) {
-      LOG_WARN("fail to init row caster", KR(ret));
-    }
-  }
+  // // init buffer_
+  // else {
+  //   for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+  //     if (OB_FAIL(buffer_[i].create(FILE_BUFFER_SIZE))) {
+  //       LOG_WARN("fail to create buffer", KR(ret));
+  //     }
+  //   }
+  // }
+  // // init row_caster_
+  // if (OB_SUCCESS(ret)) {
+  //     for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+  //     if (OB_FAIL(row_caster_[i].init(table_schema_, field_or_var_list))) {
+  //       LOG_WARN("fail to init row caster", KR(ret));
+  //     }
+  //   }
+  // }
   // init external_sort_
   for (int i = 0; i < THREAD_POOL_SIZE; i++) {
     if (OB_FAIL(external_sort_[i].init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
@@ -1060,6 +1063,7 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
 
 void ObLoadDataDirectDemo::MyThreadPool2::run1()
 {
+  // ob_load_data_direct_demo->mutex2_.lock();
   ObTenantStatEstGuard stat_est_guard(MTL_ID());
   ObTenantBase *tenant_base = MTL_CTX();
   Worker::CompatMode mode = ((ObTenant *)tenant_base)->get_compat_mode();
@@ -1067,9 +1071,21 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
   uint64_t thread_id = get_thread_idx();
   //do work
 
-  ObLoadDataBuffer &buffer_ = ob_load_data_direct_demo->buffer_[thread_id];
-  ObLoadCSVPaser &csv_parser_ = ob_load_data_direct_demo->csv_parser_[thread_id];
-  ObLoadRowCaster &row_caster_ = ob_load_data_direct_demo->row_caster_[thread_id];
+  // ObLoadDataBuffer &buffer_ = ob_load_data_direct_demo->buffer_[thread_id];
+  // ObLoadCSVPaser &csv_parser_ = ob_load_data_direct_demo->csv_parser_[thread_id];
+  // ObLoadRowCaster &row_caster_ = ob_load_data_direct_demo->row_caster_[thread_id];
+  ObLoadDataBuffer buffer_;
+  ObLoadCSVPaser csv_parser_;
+  ObLoadRowCaster row_caster_;
+
+  ObLoadDataStmt *load_stmt_ = ob_load_data_direct_demo->load_stmt_;
+  const ObLoadArgument &load_args = load_stmt_->get_load_arguments();
+  const ObIArray<ObLoadDataStmt::FieldOrVarStruct> &field_or_var_list =
+    load_stmt_->get_field_or_var_list();
+  buffer_.create(ob_load_data_direct_demo->FILE_BUFFER_SIZE);
+  csv_parser_.init(load_stmt_->get_data_struct_in_file(), field_or_var_list.count(),
+                      load_args.file_cs_type_);
+  row_caster_.init(ob_load_data_direct_demo->table_schema_, field_or_var_list);
 
   int ret = OB_SUCCESS;
   const ObNewRow *new_row = nullptr;
@@ -1107,9 +1123,8 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
           LOG_WARN("fail to cast row", KR(ret));
         } else {
-          ob_load_data_direct_demo->mutex_.trylock();
+          ob_load_data_direct_demo->mutex_.lock();
           if (!ob_load_data_direct_demo->sample_inited_) {
-            
             const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
             int64_t buf_pos = sizeof(ObLoadDatumRow);
             buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
@@ -1125,7 +1140,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
             ob_load_data_direct_demo->mutex_.unlock();
             int bucket_index = 0;
             ob_load_data_direct_demo->get_bucket_index(datum_row, bucket_index);
-            ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].trylock();
+            ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].lock();
             ob_load_data_direct_demo->bucket_counter_[bucket_index]++;
             ob_load_data_direct_demo->external_sort_[bucket_index].append_row(*datum_row);
             ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].unlock();
@@ -1134,11 +1149,12 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
       }
     }
   }
-  ob_load_data_direct_demo->mutex_.trylock();
+  ob_load_data_direct_demo->mutex_.lock();
   if (!ob_load_data_direct_demo->sample_inited_) {
     ob_load_data_direct_demo->generate_sample_datumrows();
   }
   ob_load_data_direct_demo->mutex_.unlock();
+//   ob_load_data_direct_demo->mutex2_.unlock();
 }
 
 int ObLoadDataDirectDemo::do_load()
