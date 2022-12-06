@@ -1055,7 +1055,6 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
 
 void ObLoadDataDirectDemo::MyThreadPool2::run1()
 {
-  // ob_load_data_direct_demo->mutex3_.lock();
   ObTenantStatEstGuard stat_est_guard(MTL_ID());
   ObTenantBase *tenant_base = MTL_CTX();
   Worker::CompatMode mode = ((ObTenant *)tenant_base)->get_compat_mode();
@@ -1063,12 +1062,12 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
   uint64_t thread_id = get_thread_idx();
   //do work
 
-  // ObLoadDataBuffer &buffer_ = ob_load_data_direct_demo->buffer_[thread_id];
-  // ObLoadRowCaster &row_caster_ = ob_load_data_direct_demo->row_caster_[thread_id];
   ObLoadDataBuffer &buffer = ob_load_data_direct_demo->buffer_;
+  // ObLoadDataBuffer &buffer_ = ob_load_data_direct_demo->buffer_[thread_id];
   ObLoadCSVPaser &csv_parser = ob_load_data_direct_demo->csv_parser_;
   // ObLoadCSVPaser csv_parser;
   ObLoadRowCaster row_caster;
+  // ObLoadRowCaster &row_caster_ = ob_load_data_direct_demo->row_caster_[thread_id];
 
   ObLoadDataStmt *load_stmt_ = ob_load_data_direct_demo->load_stmt_;
   const ObLoadArgument &load_args = load_stmt_->get_load_arguments();
@@ -1140,9 +1139,9 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
             }
             ob_load_data_direct_demo->mutex_.unlock();
           } else {
-            ob_load_data_direct_demo->mutex_.unlock();
             int bucket_index;
             ob_load_data_direct_demo->get_bucket_index(datum_row, bucket_index);
+            ob_load_data_direct_demo->mutex_.unlock();
             ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].lock();
             ob_load_data_direct_demo->bucket_counter_[bucket_index]++;
             ob_load_data_direct_demo->external_sort_[bucket_index].append_row(*datum_row);
@@ -1157,7 +1156,6 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
     ob_load_data_direct_demo->generate_sample_datumrows();
   }
   ob_load_data_direct_demo->mutex_.unlock();
-  // ob_load_data_direct_demo->mutex3_.unlock();
 }
 
 int ObLoadDataDirectDemo::do_load()
