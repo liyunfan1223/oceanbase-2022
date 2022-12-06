@@ -1088,7 +1088,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
 
   char *buf = NULL;
   int sample_count = 0;
-  ob_load_data_direct_demo->mutex3_.lock();
+  // ob_load_data_direct_demo->mutex3_.lock();
 
   while (OB_SUCC(ret)) {
     ob_load_data_direct_demo->mutex2_.lock();
@@ -1160,7 +1160,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
     }
     ob_row_vec.clear();
   }
-  ob_load_data_direct_demo->mutex3_.unlock();
+  // ob_load_data_direct_demo->mutex3_.unlock();
   ob_load_data_direct_demo->mutex_.lock();
   if (!ob_load_data_direct_demo->sample_inited_) {
     ob_load_data_direct_demo->generate_sample_datumrows();
