@@ -50,7 +50,6 @@ private:
   common::ObFileReader file_reader_;
   int64_t offset_;
   bool is_read_end_;
-  lib::ObMutex mutex;
 };
 
 class ObLoadCSVPaser
@@ -240,9 +239,9 @@ private:
   blocksstable::ObStorageDatumUtils datum_utils_;
   const share::schema::ObTableSchema *table_schema_ = nullptr;
   ObLoadDataStmt *load_stmt_;
-  // ObLoadCSVPaser csv_parser_[THREAD_POOL_SIZE];
+  ObLoadCSVPaser csv_parser_;
   ObLoadSequentialFileReader file_reader_;
-  // ObLoadDataBuffer buffer_[THREAD_POOL_SIZE];
+  ObLoadDataBuffer buffer_;
   // ObLoadRowCaster row_caster_[THREAD_POOL_SIZE];
   ObLoadExternalSort external_sort_[THREAD_POOL_SIZE];
   ObLoadSSTableWriter sstable_writer_;
