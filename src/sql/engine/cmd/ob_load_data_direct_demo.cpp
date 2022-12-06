@@ -1197,7 +1197,7 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
     sample_datumrows_.push_back(datumrow_list_[(datumrow_list_.size() - 1) / THREAD_POOL_SIZE * i]);
   }
   for (int i = 0; i < datumrow_list_.size(); i++) {
-    int bucket_index = 0;
+    int bucket_index;
     get_bucket_index(datumrow_list_[i], bucket_index);
     bucket_counter_[bucket_index]++;
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
