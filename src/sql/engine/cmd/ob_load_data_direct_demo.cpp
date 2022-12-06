@@ -1107,8 +1107,9 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         } else if (OB_FAIL(row_caster_.get_casted_row(*new_row, datum_row))) {
           LOG_WARN("fail to cast row", KR(ret));
         } else {
+          ob_load_data_direct_demo->mutex_.trylock();
           if (!ob_load_data_direct_demo->sample_inited_) {
-            ob_load_data_direct_demo->mutex_.trylock();
+            
             const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
             int64_t buf_pos = sizeof(ObLoadDatumRow);
             buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
@@ -1121,6 +1122,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
             }
             ob_load_data_direct_demo->mutex_.unlock();
           } else {
+            ob_load_data_direct_demo->mutex_.unlock();
             int bucket_index = 0;
             ob_load_data_direct_demo->get_bucket_index(datum_row, bucket_index);
             ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].trylock();
