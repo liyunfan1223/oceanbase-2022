@@ -777,7 +777,7 @@ int ObLoadSSTableWriter::init_macro_block_writer(uint64_t thread_id, blocksstabl
   int ret = OB_SUCCESS;
   if (OB_SUCC(ret)) {
     ObMacroDataSeq data_seq(thread_id * 100);
-    LOG_INFO("[DATA_DESC AND DATA_SEQ]", K(data_store_desc_), K(data_seq));
+    // LOG_INFO("[DATA_DESC AND DATA_SEQ]", K(data_store_desc_), K(data_seq));
     if (OB_FAIL(macro_block_writer.open(data_store_desc_, data_seq))) {
       LOG_WARN("fail to init macro block writer", KR(ret), K(data_store_desc_), K(data_seq));
     }
@@ -1135,10 +1135,8 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         if (!ob_load_data_direct_demo->sample_inited_) {
           const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
           int64_t buf_pos = sizeof(ObLoadDatumRow);
-          ob_load_data_direct_demo->mutex3_.lock();
           buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
           new_item = new (buf) ObLoadDatumRow();
-          ob_load_data_direct_demo->mutex3_.unlock();
           new_item->deep_copy(*datum_row, buf, item_size, buf_pos);
           ob_load_data_direct_demo->datumrow_list_.push_back(new_item);
           sample_count++;
@@ -1160,9 +1158,10 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
     ob_row_vec.clear();
   }
   if (!ob_load_data_direct_demo->sample_inited_) {
-    ob_load_data_direct_demo->mutex_.lock();
-    ob_load_data_direct_demo->generate_sample_datumrows();
-    ob_load_data_direct_demo->mutex_.unlock();
+    if (ob_load_data_direct_demo->mutex_.trylock()) {
+      ob_load_data_direct_demo->generate_sample_datumrows();
+      ob_load_data_direct_demo->mutex_.unlock();
+    }
   }
   allocator.reset();
 }
