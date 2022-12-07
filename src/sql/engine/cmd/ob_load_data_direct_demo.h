@@ -211,7 +211,7 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
     public:
     ObLoadDataDirectDemo * ob_load_data_direct_demo;
   };
-  static const int64_t MEM_BUFFER_SIZE = (1280LL << 20);
+  static const int64_t MEM_BUFFER_SIZE = (1LL << 30);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
   static const int64_t THREAD_POOL_SIZE = 8;
   static const int64_t SAMPLE_POOL_SIZE = 50000;
@@ -242,7 +242,6 @@ private:
   ObLoadCSVPaser csv_parser_;
   ObLoadSequentialFileReader file_reader_;
   ObLoadDataBuffer buffer_;
-  // ObLoadRowCaster row_caster_[THREAD_POOL_SIZE];
   ObLoadExternalSort external_sort_[THREAD_POOL_SIZE];
   ObLoadSSTableWriter sstable_writer_;
   int sample_inited_;

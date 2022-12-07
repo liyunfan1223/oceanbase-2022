@@ -943,7 +943,7 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   const uint64_t tenant_id = load_args.tenant_id_;
   const uint64_t table_id = load_args.table_id_;
   ObSchemaGetterGuard schema_guard;
-  allocator_.set_tenant_id(MTL_ID());
+  allocator_.set_tenant_id(1);
   // const ObTableSchema *table_schema = nullptr;
   if (OB_FAIL(ObMultiVersionSchemaService::get_instance().get_tenant_schema_guard(tenant_id,
                                                                                   schema_guard))) {
@@ -1001,6 +1001,7 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
     LOG_WARN("fail to init compare", KR(ret));
   }
   sample_inited_ = false;
+  sample_count_ = 0;
   thread_pool_.ob_load_data_direct_demo = this;
   thread_pool2_.ob_load_data_direct_demo = this;
   memset(bucket_counter_, 0, sizeof(bucket_counter_));
@@ -1084,7 +1085,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
   int &sample_count = ob_load_data_direct_demo->sample_count_;
   // ob_load_data_direct_demo->mutex3_.lock();
   common::ObArenaAllocator allocator;
-  allocator.set_tenant_id(MTL_ID());
+  allocator.set_tenant_id(1);
   while (OB_SUCC(ret)) {
     ob_load_data_direct_demo->mutex2_.lock();
     if (OB_FAIL(buffer.squash())) {
@@ -1115,6 +1116,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         }
       } else {
         const int64_t item_size = sizeof(ObNewRow) + next_row->get_deep_copy_size();
+        LOG_INFO("[ObNewRow_ITEM_SIZE]", K(item_size));
         int64_t buf_pos = sizeof(ObNewRow);
         buf2 = static_cast<char *>(allocator.alloc(item_size));
         ob_row = new (buf2) ObNewRow();
@@ -1132,8 +1134,10 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         if (!ob_load_data_direct_demo->sample_inited_) {
           const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
           int64_t buf_pos = sizeof(ObLoadDatumRow);
+          ob_load_data_direct_demo->mutex3_.lock();
           buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
           new_item = new (buf) ObLoadDatumRow();
+          ob_load_data_direct_demo->mutex3_.unlock();
           new_item->deep_copy(*datum_row, buf, item_size, buf_pos);
           ob_load_data_direct_demo->datumrow_list_.push_back(new_item);
           sample_count++;
@@ -1151,18 +1155,15 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
           ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].unlock();
         }
       }
-      // ob_load_data_direct_demo->mutex3_.lock();
-      // ob_load_data_direct_demo->allocator_.free(ob_row_vec[i]);
-      // ob_load_data_direct_demo->mutex3_.unlock();
     }
     ob_row_vec.clear();
     allocator.reuse();
   }
-  ob_load_data_direct_demo->mutex_.lock();
   if (!ob_load_data_direct_demo->sample_inited_) {
+    ob_load_data_direct_demo->mutex_.lock();
     ob_load_data_direct_demo->generate_sample_datumrows();
+    ob_load_data_direct_demo->mutex_.unlock();
   }
-  ob_load_data_direct_demo->mutex_.unlock();
   allocator.reset();
 }
 
@@ -1191,6 +1192,7 @@ int ObLoadDataDirectDemo::do_load()
   thread_pool_.stop();
   LOG_INFO("[THREAD_POOL] destroy.");
   thread_pool_.destroy();
+  LOG_INFO("[MTL_ID]", K(MTL_ID()));
   if (OB_FAIL(sstable_writer_.close())) {
     LOG_WARN("fail to close sstable writer", KR(ret));
   }
@@ -1199,6 +1201,7 @@ int ObLoadDataDirectDemo::do_load()
 
 int ObLoadDataDirectDemo::generate_sample_datumrows()
 {
+  sample_inited_ = true;
   int ret = OB_SUCCESS;
   std::sort(datumrow_list_.begin(), datumrow_list_.end(), compare_);
   for (int i = 1; i < THREAD_POOL_SIZE; i++) {
@@ -1210,8 +1213,6 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
     bucket_counter_[bucket_index]++;
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
   }
-  sample_inited_ = true;
-  sample_count_ = 0;
   return ret;
 }
 
