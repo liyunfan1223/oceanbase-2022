@@ -1083,8 +1083,8 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
   char *buf = NULL;
   char *buf2 = NULL;
   int &sample_count = ob_load_data_direct_demo->sample_count_;
-  // ob_load_data_direct_demo->mutex3_.lock();
   common::ObArenaAllocator allocator;
+  buf2 = static_cast<char *>(allocator.alloc(ALLOCATOR_SIZE));
   allocator.set_tenant_id(1);
   while (OB_SUCC(ret)) {
     ob_load_data_direct_demo->mutex2_.lock();
@@ -1105,7 +1105,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         }
       }
     }
-    
+    int offset = 0;
     while (OB_SUCC(ret)) {
       if (OB_FAIL(csv_parser.get_next_row(buffer, next_row))) {
         if (OB_UNLIKELY(OB_ITER_END != ret)) {
@@ -1116,12 +1116,13 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         }
       } else {
         const int64_t item_size = sizeof(ObNewRow) + next_row->get_deep_copy_size();
-        LOG_INFO("[ObNewRow_ITEM_SIZE]", K(item_size));
+        // LOG_INFO("[ObNewRow_ITEM_SIZE]", K(item_size));
         int64_t buf_pos = sizeof(ObNewRow);
-        buf2 = static_cast<char *>(allocator.alloc(item_size));
-        ob_row = new (buf2) ObNewRow();
-        ob_row->deep_copy(*next_row, buf2, item_size, buf_pos);
+        // buf2 = static_cast<char *>(allocator.alloc(item_size));
+        ob_row = new (buf2 + offset) ObNewRow();
+        ob_row->deep_copy(*next_row, buf2 + offset, item_size, buf_pos);
         ob_row_vec.push_back(ob_row);
+        offset += item_size;
       }
     }
     ob_load_data_direct_demo->mutex2_.unlock();
@@ -1157,7 +1158,6 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
       }
     }
     ob_row_vec.clear();
-    allocator.reuse();
   }
   if (!ob_load_data_direct_demo->sample_inited_) {
     ob_load_data_direct_demo->mutex_.lock();
