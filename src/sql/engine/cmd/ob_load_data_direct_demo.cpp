@@ -1116,11 +1116,9 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
       } else {
         const int64_t item_size = sizeof(ObNewRow) + next_row->get_deep_copy_size();
         int64_t buf_pos = sizeof(ObNewRow);
-        ob_load_data_direct_demo->mutex3_.lock();
-        buf = static_cast<char *>(allocator.alloc(item_size));
-        ob_row = new (buf) ObNewRow();
-        ob_row->deep_copy(*next_row, buf, item_size, buf_pos);
-        ob_load_data_direct_demo->mutex3_.unlock();
+        buf2 = static_cast<char *>(allocator.alloc(item_size));
+        ob_row = new (buf2) ObNewRow();
+        ob_row->deep_copy(*next_row, buf2, item_size, buf_pos);
         ob_row_vec.push_back(ob_row);
       }
     }
@@ -1134,11 +1132,9 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         if (!ob_load_data_direct_demo->sample_inited_) {
           const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
           int64_t buf_pos = sizeof(ObLoadDatumRow);
-          ob_load_data_direct_demo->mutex3_.lock();
           buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
           new_item = new (buf) ObLoadDatumRow();
           new_item->deep_copy(*datum_row, buf, item_size, buf_pos);
-          ob_load_data_direct_demo->mutex3_.unlock();
           ob_load_data_direct_demo->datumrow_list_.push_back(new_item);
           sample_count++;
           if (sample_count == SAMPLE_POOL_SIZE) {
@@ -1155,9 +1151,9 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
           ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].unlock();
         }
       }
-      ob_load_data_direct_demo->mutex3_.lock();
-      ob_load_data_direct_demo->allocator_.free(ob_row_vec[i]);
-      ob_load_data_direct_demo->mutex3_.unlock();
+      // ob_load_data_direct_demo->mutex3_.lock();
+      // ob_load_data_direct_demo->allocator_.free(ob_row_vec[i]);
+      // ob_load_data_direct_demo->mutex3_.unlock();
     }
     ob_row_vec.clear();
     allocator.reuse();
@@ -1167,6 +1163,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
     ob_load_data_direct_demo->generate_sample_datumrows();
   }
   ob_load_data_direct_demo->mutex_.unlock();
+  allocator.reset();
 }
 
 int ObLoadDataDirectDemo::do_load()
