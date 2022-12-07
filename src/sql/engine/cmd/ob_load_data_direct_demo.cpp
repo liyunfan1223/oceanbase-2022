@@ -1063,19 +1063,12 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
   //do work
 
   ObLoadDataBuffer &buffer = ob_load_data_direct_demo->buffer_;
-  // ObLoadDataBuffer &buffer_ = ob_load_data_direct_demo->buffer_[thread_id];
   ObLoadCSVPaser &csv_parser = ob_load_data_direct_demo->csv_parser_;
-  // ObLoadCSVPaser csv_parser;
   ObLoadRowCaster row_caster;
-  // ObLoadRowCaster &row_caster_ = ob_load_data_direct_demo->row_caster_[thread_id];
 
   ObLoadDataStmt *load_stmt_ = ob_load_data_direct_demo->load_stmt_;
-  const ObLoadArgument &load_args = load_stmt_->get_load_arguments();
   const ObIArray<ObLoadDataStmt::FieldOrVarStruct> &field_or_var_list =
     load_stmt_->get_field_or_var_list();
-  // buffer.create(ob_load_data_direct_demo->FILE_BUFFER_SIZE);
-  // csv_parser.init(load_stmt_->get_data_struct_in_file(), field_or_var_list.count(),
-  //                 load_args.file_cs_type_);
   row_caster.init(ob_load_data_direct_demo->table_schema_, field_or_var_list);
 
   int ret = OB_SUCCESS;
@@ -1087,9 +1080,11 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
   ObLoadDatumRow *new_item = NULL;
 
   char *buf = NULL;
+  char *buf2 = NULL;
   int &sample_count = ob_load_data_direct_demo->sample_count_;
   // ob_load_data_direct_demo->mutex3_.lock();
-
+  common::ObArenaAllocator allocator;
+  allocator.set_tenant_id(MTL_ID());
   while (OB_SUCC(ret)) {
     ob_load_data_direct_demo->mutex2_.lock();
     if (OB_FAIL(buffer.squash())) {
@@ -1121,9 +1116,11 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
       } else {
         const int64_t item_size = sizeof(ObNewRow) + next_row->get_deep_copy_size();
         int64_t buf_pos = sizeof(ObNewRow);
-        buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
+        ob_load_data_direct_demo->mutex3_.lock();
+        buf = static_cast<char *>(allocator.alloc(item_size));
         ob_row = new (buf) ObNewRow();
         ob_row->deep_copy(*next_row, buf, item_size, buf_pos);
+        ob_load_data_direct_demo->mutex3_.unlock();
         ob_row_vec.push_back(ob_row);
       }
     }
@@ -1137,11 +1134,11 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         if (!ob_load_data_direct_demo->sample_inited_) {
           const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
           int64_t buf_pos = sizeof(ObLoadDatumRow);
-          ob_load_data_direct_demo->mutex2_.lock();
+          ob_load_data_direct_demo->mutex3_.lock();
           buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
           new_item = new (buf) ObLoadDatumRow();
           new_item->deep_copy(*datum_row, buf, item_size, buf_pos);
-          ob_load_data_direct_demo->mutex2_.unlock();
+          ob_load_data_direct_demo->mutex3_.unlock();
           ob_load_data_direct_demo->datumrow_list_.push_back(new_item);
           sample_count++;
           if (sample_count == SAMPLE_POOL_SIZE) {
@@ -1158,10 +1155,13 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
           ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].unlock();
         }
       }
+      ob_load_data_direct_demo->mutex3_.lock();
+      ob_load_data_direct_demo->allocator_.free(ob_row_vec[i]);
+      ob_load_data_direct_demo->mutex3_.unlock();
     }
     ob_row_vec.clear();
+    allocator.reuse();
   }
-  // ob_load_data_direct_demo->mutex3_.unlock();
   ob_load_data_direct_demo->mutex_.lock();
   if (!ob_load_data_direct_demo->sample_inited_) {
     ob_load_data_direct_demo->generate_sample_datumrows();
