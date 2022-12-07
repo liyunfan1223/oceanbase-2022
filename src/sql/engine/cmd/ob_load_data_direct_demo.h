@@ -211,11 +211,11 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
     public:
     ObLoadDataDirectDemo * ob_load_data_direct_demo;
   };
-  static const int64_t MEM_BUFFER_SIZE = (512LL << 20);
+  static const int64_t MEM_BUFFER_SIZE = (640 << 20);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
   static const int64_t ALLOCATOR_SIZE = FILE_BUFFER_SIZE << 2;
   static const int64_t THREAD_POOL_SIZE = 16;
-  static const int64_t SAMPLE_POOL_SIZE = 10000;
+  static const int64_t SAMPLE_POOL_SIZE = 2000;
 public:
   ObLoadDataDirectDemo();
   virtual ~ObLoadDataDirectDemo();
@@ -234,7 +234,7 @@ private:
   MyThreadPool2 thread_pool2_;
   int bucket_counter_[THREAD_POOL_SIZE];
   common::ObVector<ObLoadDatumRow *> datumrow_list_;
-  common::ObVector<ObLoadDatumRow *> sample_datumrows_;
+  common::ObSortedVector<ObLoadDatumRow *> sample_datumrows_;
   ObLoadDatumRowCompare compare_;
   common::ObArenaAllocator allocator_;
   blocksstable::ObStorageDatumUtils datum_utils_;

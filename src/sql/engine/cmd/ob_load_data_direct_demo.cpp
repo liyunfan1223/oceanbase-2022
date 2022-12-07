@@ -944,7 +944,6 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   const uint64_t table_id = load_args.table_id_;
   ObSchemaGetterGuard schema_guard;
   allocator_.set_tenant_id(1);
-  // const ObTableSchema *table_schema = nullptr;
   if (OB_FAIL(ObMultiVersionSchemaService::get_instance().get_tenant_schema_guard(tenant_id,
                                                                                   schema_guard))) {
     LOG_WARN("fail to get tenant schema guard", KR(ret), K(tenant_id));
@@ -1084,8 +1083,8 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
   char *buf2 = NULL;
   int &sample_count = ob_load_data_direct_demo->sample_count_;
   common::ObArenaAllocator allocator;
-  buf2 = static_cast<char *>(allocator.alloc(ALLOCATOR_SIZE));
   allocator.set_tenant_id(1);
+  buf2 = static_cast<char *>(allocator.alloc(ALLOCATOR_SIZE));
   while (OB_SUCC(ret)) {
     ob_load_data_direct_demo->mutex2_.lock();
     if (OB_FAIL(buffer.squash())) {
@@ -1116,9 +1115,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         }
       } else {
         const int64_t item_size = sizeof(ObNewRow) + next_row->get_deep_copy_size();
-        // LOG_INFO("[ObNewRow_ITEM_SIZE]", K(item_size));
         int64_t buf_pos = sizeof(ObNewRow);
-        // buf2 = static_cast<char *>(allocator.alloc(item_size));
         ob_row = new (buf2 + offset) ObNewRow();
         ob_row->deep_copy(*next_row, buf2 + offset, item_size, buf_pos);
         ob_row_vec.push_back(ob_row);
@@ -1217,14 +1214,30 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
 
 int ObLoadDataDirectDemo::get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index)
 {
-  int ret = OB_SUCCESS; 
-  for (int i = 0; i < sample_datumrows_.size(); i++) {
-    if (compare_(datum_row, sample_datumrows_[i]) == true) {
-      bucket_index = i;
-      return ret;
-    }
-  }
-  bucket_index = sample_datumrows_.size();
+  int ret = OB_SUCCESS;
+  auto it = sample_datumrows_.lower_bound(datum_row, compare_);
+  bucket_index = it - sample_datumrows_.begin();
+  // bucket_index = -1;
+  // int l = 0, r = THREAD_POOL_SIZE - 1;
+  // while (l < r) {
+  //   int mid = (l + r) >> 1;
+  //   if (compare_(datum_row, sample_datumrows_[mid]) == true) {
+  //     bucket_index = mid;
+  //     r = mid - 1;
+  //   } else {
+  //     l = mid + 1;
+  //   }
+  // }
+  // if (bucket_index == -1) {
+  //   bucket_index = THREAD_POOL_SIZE - 1;
+  // }
+  // for (int i = 0; i < sample_datumrows_.size(); i++) {
+  //   if (compare_(datum_row, sample_datumrows_[i]) == true) {
+  //     bucket_index = i;
+  //     return ret;
+  //   }
+  // }
+  // bucket_index = sample_datumrows_.size();
   return ret;
 }
 
