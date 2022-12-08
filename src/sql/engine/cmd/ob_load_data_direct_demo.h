@@ -211,12 +211,12 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
     public:
     ObLoadDataDirectDemo * ob_load_data_direct_demo;
   };
-  static const int64_t MEM_BUFFER_SIZE = (256LL << 20);
+  static const int64_t MEM_BUFFER_SIZE = (224LL << 20);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
   static const int64_t ALLOCATOR_SIZE = FILE_BUFFER_SIZE << 2;
   static const int64_t THREAD_POOL_SIZE = 16;
   static const int64_t TOTAL_BUCKET_NUM = 32;
-  static const int64_t SAMPLE_POOL_SIZE = 2000;
+  static const int64_t SAMPLE_POOL_SIZE = 50000;
 public:
   ObLoadDataDirectDemo();
   virtual ~ObLoadDataDirectDemo();

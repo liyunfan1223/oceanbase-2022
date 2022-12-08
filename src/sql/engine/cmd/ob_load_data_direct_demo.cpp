@@ -1143,22 +1143,23 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
         if (!sample_inited) {
           ob_load_data_direct_demo->mutex_.lock();
           sample_inited = ob_load_data_direct_demo->sample_inited_;
-          ob_load_data_direct_demo->mutex_.unlock();
+          if (sample_inited) {
+            ob_load_data_direct_demo->mutex_.unlock();
+          }
         }
         if (!sample_inited) {
           const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
           int64_t buf_pos = sizeof(ObLoadDatumRow);
-          buf = static_cast<char *>(ob_load_data_direct_demo->allocators_[thread_id].alloc(item_size));
+          buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
           new_item = new (buf) ObLoadDatumRow();
           new_item->deep_copy(*datum_row, buf, item_size, buf_pos);
-          ob_load_data_direct_demo->mutex_.lock();
           ob_load_data_direct_demo->datumrow_list_.push_back(new_item);
           sample_count++;
           if (sample_count == SAMPLE_POOL_SIZE) {
             ob_load_data_direct_demo->generate_sample_datumrows();
           }
           ob_load_data_direct_demo->mutex_.unlock();
-        }else {
+        } else {
           int bucket_index = 0;
           ob_load_data_direct_demo->get_bucket_index(datum_row, bucket_index, thread_id);
           ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].lock();
@@ -1170,11 +1171,6 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
     }
     ob_row_vec.clear();
   }
-  ob_load_data_direct_demo->mutex_.lock();
-  if (!ob_load_data_direct_demo->sample_inited_) {
-    ob_load_data_direct_demo->generate_sample_datumrows();
-  }
-  ob_load_data_direct_demo->mutex_.unlock();
   allocator.reset();
 }
 
@@ -1191,7 +1187,10 @@ int ObLoadDataDirectDemo::do_load()
   thread_pool2_.stop();
   LOG_INFO("[THREAD_POOL2] destroy.");
   thread_pool2_.destroy();
-  
+
+  if (!sample_inited_) {
+    generate_sample_datumrows();
+  }
 
   thread_pool_.set_thread_count(THREAD_POOL_SIZE);
   thread_pool_.set_run_wrapper(MTL_CTX());
