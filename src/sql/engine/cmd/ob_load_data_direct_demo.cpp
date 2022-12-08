@@ -1022,32 +1022,37 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
   Worker::set_compatibility_mode(mode);
   uint64_t thread_id = get_thread_idx();
   LOG_INFO("[THREAD_ID]", K(thread_id));
-  LOG_INFO("[BUCKET_COUNTER]", K(ob_load_data_direct_demo->bucket_counter_[thread_id]));
+  
   // do work
 
   int ret = OB_SUCCESS;
   const ObLoadDatumRow *datum_row = nullptr;
 
-  ObLoadExternalSort & external_sort = ob_load_data_direct_demo->external_sort_[thread_id];
   ObLoadSSTableWriter & sstable_writer = ob_load_data_direct_demo->sstable_writer_;
   blocksstable::ObMacroBlockWriter macro_block_writer;
   sstable_writer.init_macro_block_writer(thread_id, macro_block_writer);
-  if (OB_SUCC(ret)) {
-    if (OB_FAIL(external_sort.close())) {
-      LOG_WARN("fail to close external sort", KR(ret));
-    }
-  }
-  while (OB_SUCC(ret)) {
-    if (OB_FAIL(external_sort.get_next_row(datum_row))) {
-      if (OB_UNLIKELY(OB_ITER_END != ret)) {
-        LOG_WARN("fail to get next row", KR(ret));
-      } else {
-        ret = OB_SUCCESS;
-        break;
+  int lower_bound = (TOTAL_BUCKET_NUM / THREAD_POOL_SIZE) * (thread_id);
+  int upper_bound = thread_id == THREAD_POOL_SIZE - 1 ? TOTAL_BUCKET_NUM : (TOTAL_BUCKET_NUM / THREAD_POOL_SIZE) * (thread_id + 1);
+  for (int i = lower_bound; i < upper_bound; i++) {
+    LOG_INFO("[BUCKET_COUNTER]", K(ob_load_data_direct_demo->bucket_counter_[i]));
+    ObLoadExternalSort & external_sort = ob_load_data_direct_demo->external_sort_[i];
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(external_sort.close())) {
+        LOG_WARN("fail to close external sort", KR(ret));
       }
-    } else {
-      if (OB_FAIL(sstable_writer.append_row(thread_id, *datum_row, macro_block_writer))) {
-        LOG_WARN("fail to append row", KR(ret));
+    }
+    while (OB_SUCC(ret)) {
+      if (OB_FAIL(external_sort.get_next_row(datum_row))) {
+        if (OB_UNLIKELY(OB_ITER_END != ret)) {
+          LOG_WARN("fail to get next row", KR(ret));
+        } else {
+          ret = OB_SUCCESS;
+          break;
+        }
+      } else {
+        if (OB_FAIL(sstable_writer.append_row(thread_id, *datum_row, macro_block_writer))) {
+          LOG_WARN("fail to append row", KR(ret));
+        }
       }
     }
   }
@@ -1205,12 +1210,12 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
   sample_inited_ = true;
   int ret = OB_SUCCESS;
   std::sort(datumrow_list_.begin(), datumrow_list_.end(), compare_);
-  for (int i = 1; i < THREAD_POOL_SIZE; i++) {
-    sample_datumrows_.push_back(datumrow_list_[(datumrow_list_.size() - 1) / THREAD_POOL_SIZE * i]);
+  for (int i = 1; i < TOTAL_BUCKET_NUM; i++) {
+    sample_datumrows_.push_back(datumrow_list_[(datumrow_list_.size() - 1) / TOTAL_BUCKET_NUM * i]);
   }
   for (int i = 0; i < datumrow_list_.size(); i++) {
     int bucket_index = 0;
-    get_bucket_index(datumrow_list_[i], bucket_index, 0);
+    get_bucket_index(datumrow_list_[i], bucket_index, -1);
     bucket_counter_[bucket_index]++;
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
   }
@@ -1220,6 +1225,7 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
 int ObLoadDataDirectDemo::get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index, int thread_id)
 {
   int ret = OB_SUCCESS;
+  auto &compare = thread_id == -1 ? compare_ : compares_[thread_id];
   auto it = sample_datumrows_.lower_bound(datum_row, compares_[thread_id]);
   bucket_index = it - sample_datumrows_.begin();
   return ret;

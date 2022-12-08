@@ -163,7 +163,7 @@ private:
 
 class ObLoadSSTableWriter
 {
-  static const int64_t THREAD_POOL_SIZE = 64;
+  static const int64_t THREAD_POOL_SIZE = 16;
 public:
   ObLoadSSTableWriter();
   ~ObLoadSSTableWriter();
@@ -211,10 +211,11 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
     public:
     ObLoadDataDirectDemo * ob_load_data_direct_demo;
   };
-  static const int64_t MEM_BUFFER_SIZE = (128LL << 20);
+  static const int64_t MEM_BUFFER_SIZE = (512LL << 20);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
   static const int64_t ALLOCATOR_SIZE = FILE_BUFFER_SIZE << 2;
-  static const int64_t THREAD_POOL_SIZE = 64;
+  static const int64_t THREAD_POOL_SIZE = 16;
+  static const int64_t TOTAL_BUCKET_NUM = 32;
   static const int64_t SAMPLE_POOL_SIZE = 2000;
 public:
   ObLoadDataDirectDemo();
@@ -229,10 +230,10 @@ private:
   int init_buffer();
   int init_row_caster();
 private:
-  lib::ObMutex mutex_, mutex2_, mutex3_, mutex_for_bucket_[THREAD_POOL_SIZE];
+  lib::ObMutex mutex_, mutex2_, mutex3_, mutex_for_bucket_[TOTAL_BUCKET_NUM];
   MyThreadPool thread_pool_;
   MyThreadPool2 thread_pool2_;
-  int bucket_counter_[THREAD_POOL_SIZE];
+  int bucket_counter_[TOTAL_BUCKET_NUM];
   common::ObVector<ObLoadDatumRow *> datumrow_list_;
   common::ObSortedVector<ObLoadDatumRow *> sample_datumrows_;
   ObLoadDatumRowCompare compare_;
@@ -246,7 +247,7 @@ private:
   ObLoadCSVPaser csv_parser_;
   ObLoadSequentialFileReader file_reader_;
   ObLoadDataBuffer buffer_;
-  ObLoadExternalSort external_sort_[THREAD_POOL_SIZE];
+  ObLoadExternalSort external_sort_[TOTAL_BUCKET_NUM];
   ObLoadSSTableWriter sstable_writer_;
   int sample_inited_;
   int sample_count_;
