@@ -1226,7 +1226,7 @@ int ObLoadDataDirectDemo::get_bucket_index(const ObLoadDatumRow *datum_row, int 
 {
   int ret = OB_SUCCESS;
   auto &compare = thread_id == -1 ? compare_ : compares_[thread_id];
-  auto it = sample_datumrows_.lower_bound(datum_row, compares_[thread_id]);
+  auto it = sample_datumrows_.lower_bound(datum_row, compare);
   bucket_index = it - sample_datumrows_.begin();
   return ret;
 }
