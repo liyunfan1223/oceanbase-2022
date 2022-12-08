@@ -999,6 +999,12 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   } else if (OB_FAIL(compare_.init(rowkey_column_num, &datum_utils_))) {
     LOG_WARN("fail to init compare", KR(ret));
   }
+  for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+    allocators_[i].set_tenant_id(1);
+    datum_utilss_[i].init(multi_version_column_descs, rowkey_column_num,
+                      is_oracle_mode(), allocators_[i]);
+    compares_[i].init(rowkey_column_num, &datum_utilss_[i]);
+  }
   sample_inited_ = false;
   sample_count_ = 0;
   thread_pool_.ob_load_data_direct_demo = this;
@@ -1128,23 +1134,22 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
       if (OB_FAIL(row_caster.get_casted_row(*ob_row_vec[i], datum_row))) {
         LOG_WARN("fail to cast row", KR(ret));
       } else {
-        ob_load_data_direct_demo->mutex_.lock();
         if (!ob_load_data_direct_demo->sample_inited_) {
           const int64_t item_size = sizeof(ObLoadDatumRow) + datum_row->get_deep_copy_size();
           int64_t buf_pos = sizeof(ObLoadDatumRow);
-          buf = static_cast<char *>(ob_load_data_direct_demo->allocator_.alloc(item_size));
+          buf = static_cast<char *>(ob_load_data_direct_demo->allocators_[thread_id].alloc(item_size));
           new_item = new (buf) ObLoadDatumRow();
           new_item->deep_copy(*datum_row, buf, item_size, buf_pos);
+          ob_load_data_direct_demo->mutex_.lock();
           ob_load_data_direct_demo->datumrow_list_.push_back(new_item);
           sample_count++;
           if (sample_count == SAMPLE_POOL_SIZE) {
-            ob_load_data_direct_demo->generate_sample_datumrows();
-          }
+              ob_load_data_direct_demo->generate_sample_datumrows();
+            }
           ob_load_data_direct_demo->mutex_.unlock();
         } else {
           int bucket_index = 0;
-          ob_load_data_direct_demo->get_bucket_index(datum_row, bucket_index);
-          ob_load_data_direct_demo->mutex_.unlock();
+          ob_load_data_direct_demo->get_bucket_index(datum_row, bucket_index, thread_id);
           ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].lock();
           ob_load_data_direct_demo->bucket_counter_[bucket_index]++;
           ob_load_data_direct_demo->external_sort_[bucket_index].append_row(*datum_row);
@@ -1205,39 +1210,18 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
   }
   for (int i = 0; i < datumrow_list_.size(); i++) {
     int bucket_index = 0;
-    get_bucket_index(datumrow_list_[i], bucket_index);
+    get_bucket_index(datumrow_list_[i], bucket_index, 0);
     bucket_counter_[bucket_index]++;
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
   }
   return ret;
 }
 
-int ObLoadDataDirectDemo::get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index)
+int ObLoadDataDirectDemo::get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index, int thread_id)
 {
   int ret = OB_SUCCESS;
-  auto it = sample_datumrows_.lower_bound(datum_row, compare_);
+  auto it = sample_datumrows_.lower_bound(datum_row, compares_[thread_id]);
   bucket_index = it - sample_datumrows_.begin();
-  // bucket_index = -1;
-  // int l = 0, r = THREAD_POOL_SIZE - 1;
-  // while (l < r) {
-  //   int mid = (l + r) >> 1;
-  //   if (compare_(datum_row, sample_datumrows_[mid]) == true) {
-  //     bucket_index = mid;
-  //     r = mid - 1;
-  //   } else {
-  //     l = mid + 1;
-  //   }
-  // }
-  // if (bucket_index == -1) {
-  //   bucket_index = THREAD_POOL_SIZE - 1;
-  // }
-  // for (int i = 0; i < sample_datumrows_.size(); i++) {
-  //   if (compare_(datum_row, sample_datumrows_[i]) == true) {
-  //     bucket_index = i;
-  //     return ret;
-  //   }
-  // }
-  // bucket_index = sample_datumrows_.size();
   return ret;
 }
 
