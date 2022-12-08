@@ -980,7 +980,7 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   //   }
   // }
   // init external_sort_
-  for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+  for (int i = 0; i < TOTAL_BUCKET_NUM; i++) {
     if (OB_FAIL(external_sort_[i].init(table_schema_, MEM_BUFFER_SIZE, FILE_BUFFER_SIZE))) {
       LOG_WARN("fail to init row caster", KR(ret));
     }
