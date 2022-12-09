@@ -999,12 +999,12 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   } else if (OB_FAIL(compare_.init(rowkey_column_num, &datum_utils_))) {
     LOG_WARN("fail to init compare", KR(ret));
   }
-  for (int i = 0; i < THREAD_POOL_SIZE; i++) {
-    allocators_[i].set_tenant_id(1);
-    datum_utilss_[i].init(multi_version_column_descs, rowkey_column_num,
-                      is_oracle_mode(), allocators_[i]);
-    compares_[i].init(rowkey_column_num, &datum_utilss_[i]);
-  }
+  // for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+  //   allocators_[i].set_tenant_id(1);
+  //   datum_utilss_[i].init(multi_version_column_descs, rowkey_column_num,
+  //                     is_oracle_mode(), allocators_[i]);
+  //   compares_[i].init(rowkey_column_num, &datum_utilss_[i]);
+  // }
   sample_inited_ = false;
   sample_count_ = 0;
   thread_pool_.ob_load_data_direct_demo = this;
@@ -1161,7 +1161,9 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
           ob_load_data_direct_demo->mutex_.unlock();
         } else {
           int bucket_index = 0;
+          ob_load_data_direct_demo->mutex_.lock();
           ob_load_data_direct_demo->get_bucket_index(datum_row, bucket_index, thread_id);
+          ob_load_data_direct_demo->mutex_.unlock();
           ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].lock();
           ob_load_data_direct_demo->bucket_counter_[bucket_index]++;
           ob_load_data_direct_demo->external_sort_[bucket_index].append_row(*datum_row);
@@ -1233,7 +1235,8 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
 int ObLoadDataDirectDemo::get_bucket_index(const ObLoadDatumRow *datum_row, int &bucket_index, int thread_id)
 {
   int ret = OB_SUCCESS;
-  auto &compare = thread_id == -1 ? compare_ : compares_[thread_id];
+  // auto &compare = thread_id == -1 ? compare_ : compares_[thread_id];
+  auto &compare = compare_;
   auto it = sample_datumrows_.lower_bound(datum_row, compare);
   bucket_index = it - sample_datumrows_.begin();
   return ret;

@@ -214,9 +214,9 @@ class ObLoadDataDirectDemo : public ObLoadDataBase
   static const int64_t MEM_BUFFER_SIZE = (256LL << 20);
   static const int64_t FILE_BUFFER_SIZE = (2LL << 20);
   static const int64_t ALLOCATOR_SIZE = FILE_BUFFER_SIZE << 2;
-  static const int64_t THREAD_POOL_SIZE = 32;
+  static const int64_t THREAD_POOL_SIZE = 16;
   static const int64_t TOTAL_BUCKET_NUM = 32;
-  static const int64_t SAMPLE_POOL_SIZE = 2000;
+  static const int64_t SAMPLE_POOL_SIZE = 50000;
 public:
   ObLoadDataDirectDemo();
   virtual ~ObLoadDataDirectDemo();
@@ -237,11 +237,11 @@ private:
   common::ObVector<ObLoadDatumRow *> datumrow_list_;
   common::ObSortedVector<ObLoadDatumRow *> sample_datumrows_;
   ObLoadDatumRowCompare compare_;
-  ObLoadDatumRowCompare compares_[THREAD_POOL_SIZE];
+  // ObLoadDatumRowCompare compares_[THREAD_POOL_SIZE];
   common::ObArenaAllocator allocator_;
-  common::ObArenaAllocator allocators_[THREAD_POOL_SIZE];
+  // scommon::ObArenaAllocator allocators_[THREAD_POOL_SIZE];
   blocksstable::ObStorageDatumUtils datum_utils_;
-  blocksstable::ObStorageDatumUtils datum_utilss_[THREAD_POOL_SIZE];
+  // blocksstable::ObStorageDatumUtils datum_utilss_[THREAD_POOL_SIZE];
   const share::schema::ObTableSchema *table_schema_ = nullptr;
   ObLoadDataStmt *load_stmt_;
   ObLoadCSVPaser csv_parser_;
