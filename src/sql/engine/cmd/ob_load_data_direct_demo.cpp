@@ -788,16 +788,16 @@ int ObLoadSSTableWriter::init_macro_block_writer(uint64_t thread_id, blocksstabl
 int ObLoadSSTableWriter::append_row(int thread_id, const ObLoadDatumRow &datum_row, blocksstable::ObMacroBlockWriter &macro_block_writer)
 {
   int ret = OB_SUCCESS;
-  if (IS_NOT_INIT) {
-    ret = OB_NOT_INIT;
-    LOG_WARN("ObLoadSSTableWriter not init", KR(ret), KP(this));
-  } else if (OB_UNLIKELY(is_closed_)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected closed external sort", KR(ret));
-  } else if (OB_UNLIKELY(!datum_row.is_valid() || datum_row.count_ != column_count_)) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid args", KR(ret), K(datum_row), K(column_count_));
-  } else {
+  // if (IS_NOT_INIT) {
+  //   ret = OB_NOT_INIT;
+  //   LOG_WARN("ObLoadSSTableWriter not init", KR(ret), KP(this));
+  // } else if (OB_UNLIKELY(is_closed_)) {
+  //   ret = OB_ERR_UNEXPECTED;
+  //   LOG_WARN("unexpected closed external sort", KR(ret));
+  // } else if (OB_UNLIKELY(!datum_row.is_valid() || datum_row.count_ != column_count_)) {
+  //   ret = OB_INVALID_ARGUMENT;
+  //   LOG_WARN("invalid args", KR(ret), K(datum_row), K(column_count_));
+  {
     for (int64_t i = 0; i < column_count_; ++i) {
       if (i < rowkey_column_num_) {
         datum_rows_[thread_id].storage_datums_[i] = datum_row.datums_[i];
@@ -884,13 +884,13 @@ int ObLoadSSTableWriter::create_sstable()
 int ObLoadSSTableWriter::close_macro_block_writer(blocksstable::ObMacroBlockWriter &macro_block_writer)
 {
   int ret = OB_SUCCESS;
-  if (IS_NOT_INIT) {
-    ret = OB_NOT_INIT;
-    LOG_WARN("ObLoadSSTableWriter not init", KR(ret), KP(this));
-  } else if (OB_UNLIKELY(is_closed_)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected closed sstable writer", KR(ret));
-  } else {
+  // if (IS_NOT_INIT) {
+  //   ret = OB_NOT_INIT;
+  //   LOG_WARN("ObLoadSSTableWriter not init", KR(ret), KP(this));
+  // } else if (OB_UNLIKELY(is_closed_)) {
+  //   ret = OB_ERR_UNEXPECTED;
+  //   LOG_WARN("unexpected closed sstable writer", KR(ret));
+  {
     if (OB_FAIL(macro_block_writer.close())) {
       LOG_WARN("fail to close macro block writer", KR(ret));
     }
@@ -1009,7 +1009,7 @@ int ObLoadDataDirectDemo::inner_init(ObLoadDataStmt &load_stmt)
   sample_count_ = 0;
   thread_pool_.ob_load_data_direct_demo = this;
   thread_pool2_.ob_load_data_direct_demo = this;
-  memset(bucket_counter_, 0, sizeof(bucket_counter_));
+  // memset(bucket_counter_, 0, sizeof(bucket_counter_));
   return ret;
 }
 
@@ -1034,7 +1034,7 @@ void ObLoadDataDirectDemo::MyThreadPool::run1()
   int lower_bound = (TOTAL_BUCKET_NUM / THREAD_POOL_SIZE) * (thread_id);
   int upper_bound = thread_id == THREAD_POOL_SIZE - 1 ? TOTAL_BUCKET_NUM : (TOTAL_BUCKET_NUM / THREAD_POOL_SIZE) * (thread_id + 1);
   for (int i = lower_bound; i < upper_bound; i++) {
-    LOG_INFO("[BUCKET_COUNTER]", K(ob_load_data_direct_demo->bucket_counter_[i]));
+    // LOG_INFO("[BUCKET_COUNTER]", K(ob_load_data_direct_demo->bucket_counter_[i]));
     ObLoadExternalSort & external_sort = ob_load_data_direct_demo->external_sort_[i];
     if (OB_SUCC(ret)) {
       if (OB_FAIL(external_sort.close())) {
@@ -1165,7 +1165,7 @@ void ObLoadDataDirectDemo::MyThreadPool2::run1()
           ob_load_data_direct_demo->get_bucket_index(datum_row, bucket_index, thread_id);
           ob_load_data_direct_demo->mutex_.unlock();
           ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].lock();
-          ob_load_data_direct_demo->bucket_counter_[bucket_index]++;
+          // ob_load_data_direct_demo->bucket_counter_[bucket_index]++;
           ob_load_data_direct_demo->external_sort_[bucket_index].append_row(*datum_row);
           ob_load_data_direct_demo->mutex_for_bucket_[bucket_index].unlock();
         }
@@ -1226,7 +1226,7 @@ int ObLoadDataDirectDemo::generate_sample_datumrows()
   for (int i = 0; i < datumrow_list_.size(); i++) {
     int bucket_index = 0;
     get_bucket_index(datumrow_list_[i], bucket_index, -1);
-    bucket_counter_[bucket_index]++;
+    // bucket_counter_[bucket_index]++;
     external_sort_[bucket_index].append_row(*datumrow_list_[i]);
   }
   return ret;
