@@ -8,6 +8,7 @@ ob_define(DEP_DIR "${CMAKE_SOURCE_DIR}/deps/3rd/usr/local/oceanbase/deps/devel")
 
 ob_define(OB_BUILD_CDC OFF)
 ob_define(OB_USE_CLANG ON)
+ob_define(OB_USE_CCACHE ON)
 ob_define(OB_ERRSIM OFF)
 ob_define(BUILD_NUMBER 1)
 ob_define(OB_GPERF_MODE OFF)
@@ -82,6 +83,18 @@ if (OB_USE_CLANG)
   set(CMAKE_EXE_LINKER_FLAGS "${LD_OPT} -Wl,-z,noexecstack ${REORDER_LINK_OPT}")
 else() # not clang, use gcc
   message("gcc9 not support currently, please set OB_USE_CLANG ON and we will finish it as soon as possible")
+endif()
+
+if (OB_USE_CCACHE)
+  find_program(OB_CCACHE ccache
+    PATHS "${DEVTOOLS_DIR}/bin"
+    NO_DEFAULT_PATH)
+  if (NOT OB_CCACHE)
+    message(WARNING "CCACHE NOT FOUND, COMPILE CACHE MAY NOT WORK.")
+  else()
+    set(CMAKE_C_COMPILER_LAUNCHER ${OB_CCACHE})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${OB_CCACHE})
+  endif()
 endif()
 
 if (OB_CC AND OB_CXX)
